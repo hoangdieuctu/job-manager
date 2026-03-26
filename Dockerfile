@@ -7,7 +7,9 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-RUN mkdir -p uploads
+RUN mkdir -p data
+
+ENV DATA_DIR=/app/data
 
 EXPOSE 3000
 

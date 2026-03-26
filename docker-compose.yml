@@ -8,11 +8,10 @@ services:
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
       - REVIEW_MODEL=${REVIEW_MODEL:-claude-opus-4-6}
       - EXTRACTION_MODEL=${EXTRACTION_MODEL:-claude-haiku-4-5-20251001}
+      - DATA_DIR=/app/data
     volumes:
-      - jobflow_db:/app/jobs.db
-      - jobflow_uploads:/app/uploads
+      - jobflow_data:/app/data
     restart: unless-stopped
 
 volumes:
-  jobflow_db:
-  jobflow_uploads:
+  jobflow_data:

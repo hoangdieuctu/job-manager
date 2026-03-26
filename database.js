@@ -110,7 +110,12 @@ function initSchema() {
 
 function listJobs() {
   return getDb().prepare(`
-    SELECT j.*, COUNT(c.id) as candidate_count
+    SELECT j.*,
+      COUNT(c.id) as candidate_count,
+      SUM(CASE WHEN c.status = 'new' THEN 1 ELSE 0 END) as count_new,
+      SUM(CASE WHEN c.status = 'reviewing' THEN 1 ELSE 0 END) as count_reviewing,
+      SUM(CASE WHEN c.status = 'approved' THEN 1 ELSE 0 END) as count_approved,
+      SUM(CASE WHEN c.status = 'rejected' THEN 1 ELSE 0 END) as count_rejected
     FROM jobs j
     LEFT JOIN candidates c ON c.job_id = j.id
     GROUP BY j.id

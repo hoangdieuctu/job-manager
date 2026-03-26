@@ -36,6 +36,34 @@
   --r: 10px;
   --r2: 14px;
   --r3: 20px;
+  --nav-bg: rgba(8,12,20,0.8);
+}
+[data-theme="light"] {
+  --bg: #f1f5f9;
+  --bg2: #ffffff;
+  --surface: rgba(0,0,0,0.03);
+  --surface2: rgba(0,0,0,0.055);
+  --surface3: rgba(0,0,0,0.09);
+  --border: rgba(0,0,0,0.09);
+  --border2: rgba(0,0,0,0.15);
+  --accent: #6366f1;
+  --accent2: #4f52d9;
+  --accent-glow: rgba(99,102,241,0.2);
+  --accent-dim: rgba(99,102,241,0.1);
+  --green: #059669;
+  --green-dim: rgba(5,150,105,0.1);
+  --red: #e11d48;
+  --red-dim: rgba(225,29,72,0.1);
+  --amber: #d97706;
+  --amber-dim: rgba(217,119,6,0.1);
+  --blue: #2563eb;
+  --blue-dim: rgba(37,99,235,0.1);
+  --purple: #9333ea;
+  --t1: #0f172a;
+  --t2: #334155;
+  --t3: #64748b;
+  --t4: #94a3b8;
+  --nav-bg: rgba(241,245,249,0.85);
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 15px; }
@@ -48,6 +76,11 @@ body {
   background-image:
     radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.08) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 80% 100%, rgba(168,85,247,0.06) 0%, transparent 60%);
+}
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(168,85,247,0.04) 0%, transparent 60%);
 }
 a { color: inherit; text-decoration: none; }
 button { cursor: pointer; font-family: inherit; border: none; outline: none; }
@@ -63,7 +96,7 @@ input, textarea, select { font-family: inherit; outline: none; }
   position: sticky; top: 0; z-index: 100;
   height: 58px;
   display: flex; align-items: center; padding: 0 28px; gap: 20px;
-  background: rgba(8,12,20,0.8);
+  background: var(--nav-bg);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
 }
@@ -204,7 +237,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 .form-textarea { resize: vertical; min-height: 96px; }
 .form-select { appearance: none; cursor: pointer; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.form-select option { background: #0d1220; }
+.form-select option { background: var(--bg2); }
 
 /* ── Badges ──────────────────────────── */
 .badge {
@@ -548,7 +581,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 <nav id="app-nav">
   <div class="nav-logo" onclick="navigate('/')">
     <div class="nav-logo-icon">⚡</div>
-    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.1</span></div>
+    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.2</span></div>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-search-wrap">
@@ -561,6 +594,7 @@ input, textarea, select { font-family: inherit; outline: none; }
       autocomplete="off"
     >
   </div>
+  <button class="btn btn-secondary btn-sm" id="theme-toggle" title="Toggle theme" style="font-size:15px;padding:5px 10px"></button>
   <button class="btn btn-secondary btn-sm" onclick="navigate('/settings')" style="margin-left:8px" title="Settings">⚙</button>
 </nav>
 
@@ -583,6 +617,27 @@ input, textarea, select { font-family: inherit; outline: none; }
 
 <script>
 'use strict';
+
+// ── Theme ─────────────────────────────────────────────
+(function () {
+  const btn = document.getElementById('theme-toggle');
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let dark = saved ? saved === 'dark' : prefersDark;
+
+  function applyTheme() {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    btn.textContent = dark ? '☀' : '☾';
+    btn.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+
+  applyTheme();
+  btn.addEventListener('click', () => {
+    dark = !dark;
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+    applyTheme();
+  });
+})();
 
 // ── API ──────────────────────────────────────────────
 const api = {
@@ -704,14 +759,25 @@ async function viewDashboard() {
     return;
   }
 
-  const jobCards = jobs.map(j => `
+  const jobCards = jobs.map(j => {
+    const statusPills = [
+      j.count_new      ? `<span class="badge badge-new">${j.count_new} new</span>` : '',
+      j.count_reviewing? `<span class="badge badge-reviewing">${j.count_reviewing} reviewing</span>` : '',
+      j.count_approved ? `<span class="badge badge-approved">${j.count_approved} approved</span>` : '',
+      j.count_rejected ? `<span class="badge badge-rejected">${j.count_rejected} rejected</span>` : '',
+    ].filter(Boolean).join('');
+    return `
     <div class="job-card" onclick="navigate('/jobs/${j.id}')">
       <div class="job-card-title">${escHtml(j.title)}</div>
       <div class="job-card-footer">
         <span style="font-size:11px;color:var(--t3)">${fmtDate(j.created_at)}</span>
-        <span class="job-card-count">👤 ${j.candidate_count || 0}</span>
+        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end">
+          <span class="job-card-count">👤 ${j.candidate_count || 0}</span>
+          ${statusPills}
+        </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   setMain(`
     <div class="page-header">
@@ -807,7 +873,7 @@ async function viewJobDetail(jobId) {
           ? `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`
           : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
         return `
-          <div class="cand-row" id="cand-row-${c.id}" data-score="${c.match_score != null ? c.match_score : 'none'}" data-status="${c.status}" onclick="navigate('/candidates/${c.id}')">
+          <div class="cand-row" id="cand-row-${c.id}" data-score="${c.match_score != null ? c.match_score : 'none'}" data-status="${c.status}" data-name="${escHtml(c.name)}" data-created="${c.created_at || ''}" onclick="navigate('/candidates/${c.id}')">
             <div class="cand-avatar">${initials(c.name)}</div>
             <div class="cand-info">
               <div class="cand-name">${escHtml(c.name)}</div>
@@ -841,8 +907,12 @@ async function viewJobDetail(jobId) {
       <div>
         <div class="card">
           ${job.description ? `<div class="info-block"><div class="info-label">Job Description</div><div class="info-value">${escHtml(job.description)}</div></div>` : ''}
-          ${job.responsibilities ? `<div class="info-block"><div class="info-label">Key Responsibilities</div><div class="info-value">${escHtml(job.responsibilities)}</div></div>` : ''}
-          ${job.qualifications ? `<div class="info-block"><div class="info-label">Qualifications</div><div class="info-value">${escHtml(job.qualifications)}</div></div>` : ''}
+          ${(job.responsibilities || job.qualifications) ? `
+          <div id="jd-extra" style="display:none">
+            ${job.responsibilities ? `<div class="info-block"><div class="info-label">Key Responsibilities</div><div class="info-value">${escHtml(job.responsibilities)}</div></div>` : ''}
+            ${job.qualifications ? `<div class="info-block"><div class="info-label">Qualifications</div><div class="info-value">${escHtml(job.qualifications)}</div></div>` : ''}
+          </div>
+          <button id="jd-toggle-btn" class="btn btn-ghost btn-sm" style="margin-top:4px;color:var(--accent2)">Show more ↓</button>` : ''}
           ${!job.description && !job.responsibilities && !job.qualifications ? `<div class="info-value" style="color:var(--t3)">No description added</div>` : ''}
         </div>
       </div>
@@ -874,14 +944,30 @@ async function viewJobDetail(jobId) {
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
+          <div style="flex:1"></div>
+          <select id="sort-select" class="filter-select">
+            <option value="score-desc">Score ↓</option>
+            <option value="score-asc">Score ↑</option>
+            <option value="name-asc">Name A→Z</option>
+            <option value="name-desc">Name Z→A</option>
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+          </select>
         </div>` : ''}
-        ${candRows}
+        <div class="cand-rows-container">${candRows}</div>
       </div>
     </div>
   `);
 
   document.getElementById('upload-cv-btn').addEventListener('click', () => showUploadModal(jobId));
   document.getElementById('delete-job-btn').addEventListener('click', () => confirmDeleteJob(job));
+  document.getElementById('jd-toggle-btn')?.addEventListener('click', () => {
+    const extra = document.getElementById('jd-extra');
+    const btn = document.getElementById('jd-toggle-btn');
+    const open = extra.style.display === 'none';
+    extra.style.display = open ? '' : 'none';
+    btn.textContent = open ? 'Show less ↑' : 'Show more ↓';
+  });
   if (candidates.length) {
     document.getElementById('review-all-btn')?.addEventListener('click', () => runReviewAll(jobId, candidates));
     document.getElementById('download-cvs-btn').addEventListener('click', async () => {
@@ -907,13 +993,17 @@ async function viewJobDetail(jobId) {
       } catch (err) { toast(err.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = '↓ Download CVs'; }
     });
-    document.getElementById('score-filter').addEventListener('change', applyFilters);
-    document.getElementById('status-filter').addEventListener('change', applyFilters);
-    function applyFilters() {
-      const scoreVal = document.getElementById('score-filter').value;
+    document.getElementById('score-filter').addEventListener('change', applyFiltersAndSort);
+    document.getElementById('status-filter').addEventListener('change', applyFiltersAndSort);
+    document.getElementById('sort-select').addEventListener('change', applyFiltersAndSort);
+    function applyFiltersAndSort() {      const scoreVal = document.getElementById('score-filter').value;
       const statusVal = document.getElementById('status-filter').value;
+      const sortVal = document.getElementById('sort-select').value;
       const [scoreType, scoreNum] = scoreVal.includes(':') ? scoreVal.split(':') : ['', ''];
-      document.querySelectorAll('.cand-row').forEach(row => {
+      const container = document.querySelector('.cand-rows-container');
+      const rows = Array.from(document.querySelectorAll('.cand-row'));
+
+      rows.forEach(row => {
         const score = row.dataset.score;
         let scoreMatch;
         if (!scoreVal) scoreMatch = true;
@@ -923,7 +1013,30 @@ async function viewJobDetail(jobId) {
         const statusMatch = !statusVal || row.dataset.status === statusVal;
         row.style.display = scoreMatch && statusMatch ? '' : 'none';
       });
+
+      const visible = rows.filter(r => r.style.display !== 'none');
+      visible.sort((a, b) => {
+        const sa = a.dataset.score, sb = b.dataset.score;
+        if (sortVal === 'score-desc') {
+          if (sa === 'none' && sb === 'none') return 0;
+          if (sa === 'none') return 1;
+          if (sb === 'none') return -1;
+          return Number(sb) - Number(sa);
+        }
+        if (sortVal === 'score-asc') {
+          if (sa === 'none' && sb === 'none') return 0;
+          if (sa === 'none') return 1;
+          if (sb === 'none') return -1;
+          return Number(sa) - Number(sb);
+        }
+        if (sortVal === 'name-asc') return a.dataset.name.localeCompare(b.dataset.name);
+        if (sortVal === 'name-desc') return b.dataset.name.localeCompare(a.dataset.name);
+        if (sortVal === 'date-desc') return b.dataset.created.localeCompare(a.dataset.created);
+        if (sortVal === 'date-asc') return a.dataset.created.localeCompare(b.dataset.created);
+        return 0;      });
+      visible.forEach(r => container.appendChild(r));
     }
+    applyFiltersAndSort();
   }
 
   // Re-attach UI if a review poll is already running for this job
@@ -1560,8 +1673,15 @@ async function runReviewAll(jobId, candidates) {
         if (!pending.has(c.id)) return;
         if (c.match_score != null) {
           pending.delete(c.id);
-          const scoreEl = document.querySelector(`#cand-row-${c.id} .cand-score-area`);
-          if (scoreEl) scoreEl.innerHTML = `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`;
+          const row = document.querySelector(`#cand-row-${c.id}`);
+          if (row) {
+            row.dataset.score = c.match_score;
+            row.dataset.status = c.status;
+            const scoreEl = row.querySelector('.cand-score-area');
+            if (scoreEl) scoreEl.innerHTML = `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`;
+            const badgeEl = row.querySelector('.badge');
+            if (badgeEl) { badgeEl.className = `badge badge-${c.status}`; badgeEl.textContent = c.status; }
+          }
           const done = reviewable.length - pending.size;
           const b = document.getElementById('review-all-btn');
           if (b) b.innerHTML = `<div class="spinner" style="width:12px;height:12px;border-width:2px"></div> ${done}/${reviewable.length}`;
@@ -1572,6 +1692,7 @@ async function runReviewAll(jobId, candidates) {
         delete _reviewPolls[jobId];
         const b = document.getElementById('review-all-btn');
         if (b) { b.disabled = false; b.innerHTML = '🤖 Review All'; }
+        document.getElementById('sort-select')?.dispatchEvent(new Event('change'));
         toast(`Reviews complete (${reviewable.length} candidates)`, 'success');
       }
     } catch { clearInterval(poll); delete _reviewPolls[jobId]; }

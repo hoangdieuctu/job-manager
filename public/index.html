@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobFlow — ATS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080c14;
+  --bg2: #0d1220;
+  --surface: rgba(255,255,255,0.04);
+  --surface2: rgba(255,255,255,0.07);
+  --surface3: rgba(255,255,255,0.11);
+  --border: rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.14);
+  --accent: #6366f1;
+  --accent2: #818cf8;
+  --accent-glow: rgba(99,102,241,0.25);
+  --accent-dim: rgba(99,102,241,0.12);
+  --green: #10b981;
+  --green-dim: rgba(16,185,129,0.12);
+  --red: #f43f5e;
+  --red-dim: rgba(244,63,94,0.12);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245,158,11,0.12);
+  --blue: #3b82f6;
+  --blue-dim: rgba(59,130,246,0.12);
+  --purple: #a855f7;
+  --t1: #f1f5f9;
+  --t2: #94a3b8;
+  --t3: #475569;
+  --t4: #2d3748;
+  --r: 10px;
+  --r2: 14px;
+  --r3: 20px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--t1);
+  line-height: 1.6;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(168,85,247,0.06) 0%, transparent 60%);
+}
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: inherit; border: none; outline: none; }
+input, textarea, select { font-family: inherit; outline: none; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+
+/* ── Nav ─────────────────────────────── */
+#app-nav {
+  position: sticky; top: 0; z-index: 100;
+  height: 58px;
+  display: flex; align-items: center; padding: 0 28px; gap: 20px;
+  background: rgba(8,12,20,0.8);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  cursor: pointer;
+}
+.nav-logo-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.nav-logo-text { color: var(--t1); }
+.nav-logo-text span { color: var(--t3); font-weight: 400; }
+.nav-spacer { flex: 1; }
+.nav-search-wrap {
+  position: relative; width: 240px;
+}
+.nav-search-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--t1);
+  padding: 7px 14px 7px 34px;
+  font-size: 13px;
+  transition: all 0.18s;
+}
+.nav-search-input::placeholder { color: var(--t3); }
+.nav-search-input:focus {
+  border-color: var(--accent);
+  background: rgba(99,102,241,0.06);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  outline: none;
+}
+.nav-search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; pointer-events: none; opacity: 0.45;
+}
+.nav-cta {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--accent); color: #fff;
+  padding: 7px 16px; border-radius: var(--r);
+  font-size: 13px; font-weight: 600;
+  transition: all 0.2s;
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+.nav-cta:hover { background: var(--accent2); transform: translateY(-1px); box-shadow: 0 4px 24px var(--accent-glow); }
+
+/* ── Main ─────────────────────────────── */
+#app-main { padding: 36px 28px; max-width: 1300px; margin: 0 auto; }
+
+/* ── Cards / Surfaces ─────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  padding: 22px;
+  backdrop-filter: blur(10px);
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border2); }
+.card-elevated {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r2);
+  padding: 22px;
+}
+
+/* ── Buttons ─────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--r);
+  font-size: 13px; font-weight: 600;
+  transition: all 0.18s; white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.btn-primary:hover { background: var(--accent2); transform: translateY(-1px); box-shadow: 0 4px 20px var(--accent-glow); }
+.btn-secondary {
+  background: var(--surface2); color: var(--t2);
+  border: 1px solid var(--border2);
+}
+.btn-secondary:hover { background: var(--surface3); color: var(--t1); border-color: rgba(255,255,255,0.2); }
+.btn-ghost { background: transparent; color: var(--t3); }
+.btn-ghost:hover { background: var(--surface2); color: var(--t2); }
+.btn-danger {
+  background: var(--red-dim); color: var(--red);
+  border: 1px solid rgba(244,63,94,0.2);
+}
+.btn-danger:hover { background: rgba(244,63,94,0.2); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-xs { padding: 4px 10px; font-size: 11px; border-radius: 7px; }
+.filter-select {
+  padding: 4px 10px; font-size: 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border2); background: var(--surface2); color: var(--t2);
+  outline: none; transition: border-color 0.15s;
+}
+.filter-select:focus { border-color: var(--accent); }
+
+/* ── Forms ───────────────────────────── */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; font-size: 12px; font-weight: 500;
+  color: var(--t3); margin-bottom: 7px;
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+.form-input, .form-textarea, .form-select {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--t1);
+  padding: 10px 14px; font-size: 14px;
+  transition: all 0.18s;
+}
+.form-input::placeholder, .form-textarea::placeholder { color: var(--t4); }
+.form-input:focus, .form-textarea:focus, .form-select:focus {
+  border-color: var(--accent);
+  background: rgba(99,102,241,0.06);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.form-textarea { resize: vertical; min-height: 96px; }
+.form-select { appearance: none; cursor: pointer; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-select option { background: #0d1220; }
+
+/* ── Badges ──────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 99px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.badge-new { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(59,130,246,0.2); }
+.badge-reviewing { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+.badge-shortlisted { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+.badge-rejected { background: var(--red-dim); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
+.badge-hire { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+.badge-hold { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+
+/* ── Score ───────────────────────────── */
+.score-ring {
+  display: inline-flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 80px; height: 80px; border-radius: 50%;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px; font-weight: 700;
+  border: 3px solid;
+  flex-shrink: 0;
+}
+.score-high { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+.score-mid  { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+.score-low  { border-color: var(--red);   color: var(--red);   background: var(--red-dim); }
+.score-inline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 700;
+  padding: 3px 8px; border-radius: 6px;
+}
+
+/* ── Toast ───────────────────────────── */
+#toast-container {
+  position: fixed; bottom: 24px; right: 24px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 2000; pointer-events: none;
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r2);
+  padding: 12px 16px;
+  font-size: 13px; font-weight: 500;
+  pointer-events: auto; max-width: 340px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: toastIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+}
+.toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.toast-success .toast-dot { background: var(--green); }
+.toast-error   .toast-dot { background: var(--red); }
+.toast-info    .toast-dot { background: var(--accent); }
+@keyframes toastIn { from { transform: translateX(16px) scale(0.95); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes toastOut { to { transform: translateX(16px) scale(0.95); opacity: 0; } }
+
+/* ── Modal ───────────────────────────── */
+#modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(6px);
+  z-index: 500;
+  align-items: center; justify-content: center;
+  padding: 24px;
+}
+#modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r3);
+  width: 100%; max-width: 520px;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  animation: modalIn 0.22s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes modalIn { from { transform: scale(0.96) translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal-header { padding: 22px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close {
+  background: var(--surface2); color: var(--t3);
+  width: 28px; height: 28px;
+  border-radius: 8px; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.modal-close:hover { background: var(--surface3); color: var(--t1); }
+.modal-body { padding: 20px 24px; }
+.modal-footer { padding: 0 24px 22px; display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ── Drop zone ───────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--r2);
+  padding: 28px 20px; text-align: center;
+  cursor: pointer; transition: all 0.2s;
+  background: rgba(255,255,255,0.02);
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.upload-file-row {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px;
+}
+.drop-zone-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.7; }
+.drop-zone-text { font-size: 13px; color: var(--t2); }
+.drop-zone-hint { font-size: 11px; color: var(--t3); margin-top: 4px; }
+.drop-zone-file {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; font-size: 12px; font-weight: 600;
+  color: var(--accent2);
+  background: var(--accent-dim); padding: 4px 10px; border-radius: 6px;
+}
+
+/* ── Spinner / Loading ───────────────── */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  display: inline-block; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px; padding: 80px 20px;
+  color: var(--t3); font-size: 13px;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--r);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Page header ─────────────────────── */
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 32px; gap: 16px;
+}
+.page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--t1); }
+.page-sub { font-size: 13px; color: var(--t3); margin-top: 3px; }
+
+/* ── Back ────────────────────────────── */
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--t3);
+  margin-bottom: 22px; cursor: pointer;
+  transition: color 0.15s;
+}
+.back-btn:hover { color: var(--t2); }
+.back-arrow { font-size: 16px; line-height: 1; }
+
+/* ── Pipeline dashboard ──────────────── */
+.stats-row {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 16px; margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r2); padding: 18px 20px;
+  display: flex; align-items: center; gap: 14px;
+}
+.stat-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.stat-value { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1; }
+.stat-label { font-size: 12px; color: var(--t3); margin-top: 3px; }
+
+.jobs-list { display: flex; flex-direction: column; gap: 10px; }
+
+.job-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2); padding: 16px 18px;
+  cursor: pointer; transition: all 0.2s;
+  margin-bottom: 10px; position: relative; overflow: hidden;
+}
+.job-card::before {
+  content: ''; position: absolute; inset: 0 auto 0 0;
+  width: 3px; opacity: 0; transition: opacity 0.2s;
+  background: linear-gradient(180deg, var(--accent), var(--purple));
+}
+.job-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+.job-card:hover::before { opacity: 1; }
+.job-card-title { font-size: 14px; font-weight: 600; color: var(--t1); margin-bottom: 3px; }
+.job-card-company { font-size: 12px; color: var(--t3); margin-bottom: 12px; }
+.job-card-footer { display: flex; align-items: center; justify-content: space-between; }
+.job-card-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--t3);
+  background: var(--surface2); padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.empty-col {
+  border: 1px dashed var(--border); border-radius: var(--r2);
+  padding: 28px 20px; text-align: center;
+  color: var(--t4); font-size: 12px;
+}
+
+/* ── Job detail ──────────────────────── */
+.job-detail-grid { display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }
+.info-block { margin-bottom: 22px; }
+.info-label { font-size: 11px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 7px; }
+.info-value { font-size: 13px; color: var(--t2); line-height: 1.75; white-space: pre-wrap; }
+
+/* ── Candidate row ───────────────────── */
+.cand-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2); padding: 14px 16px;
+  margin-bottom: 8px; cursor: pointer; transition: all 0.18s;
+}
+.cand-row:hover { border-color: var(--border2); background: var(--surface2); transform: translateX(2px); }
+.cand-avatar {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent-dim), rgba(168,85,247,0.15));
+  border: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: var(--accent2);
+  flex-shrink: 0; text-transform: uppercase;
+}
+.cand-info { flex: 1; min-width: 0; }
+.cand-name { font-size: 14px; font-weight: 600; }
+.cand-email { font-size: 12px; color: var(--t3); }
+.cand-score-inline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; font-weight: 700; padding: 4px 9px;
+  border-radius: 8px;
+}
+
+/* ── Candidate detail ────────────────── */
+.cand-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+
+/* ── Review panel ────────────────────── */
+.review-score-area {
+  display: flex; align-items: center; gap: 18px;
+  padding: 18px; margin-bottom: 20px;
+  background: var(--surface2); border-radius: var(--r2);
+  border: 1px solid var(--border);
+}
+.review-score-info { flex: 1; }
+.review-score-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.review-score-sub { font-size: 12px; color: var(--t3); }
+.review-section { margin-bottom: 18px; }
+.review-section-title {
+  font-size: 11px; font-weight: 700; color: var(--t3);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.review-item {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--t2); line-height: 1.5;
+}
+.review-item:last-child { border-bottom: none; }
+.review-item-dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.exp-timeline { display: flex; flex-direction: column; gap: 0; }
+.exp-item {
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  position: relative; padding-left: 16px;
+}
+.exp-item::before {
+  content: ''; position: absolute; left: 0; top: 18px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+}
+.exp-item:last-child { border-bottom: none; }
+.exp-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.exp-title { font-size: 13px; font-weight: 600; color: var(--t1); }
+.exp-company { font-size: 12px; color: var(--t3); margin-top: 1px; }
+.exp-duration { font-size: 11px; color: var(--t4); white-space: nowrap; margin-top: 2px; flex-shrink: 0; }
+.exp-summary { font-size: 12px; color: var(--t2); line-height: 1.6; }
+.review-summary {
+  font-size: 13px; color: var(--t2); line-height: 1.75;
+  padding: 14px; background: var(--surface2);
+  border-radius: var(--r); border: 1px solid var(--border);
+  margin-bottom: 18px;
+}
+
+/* ── Feedback ────────────────────────── */
+.fb-item {
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.fb-item:last-child { border-bottom: none; }
+.fb-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.fb-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--t3);
+}
+.fb-note { font-size: 13px; color: var(--t2); }
+
+/* ── Empty state ─────────────────────── */
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--t3);
+}
+.empty-icon {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--surface2); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; margin: 0 auto 16px;
+}
+.empty-title { font-size: 16px; font-weight: 600; color: var(--t2); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; }
+
+/* ── Divider ─────────────────────────── */
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* ── Section title ───────────────────── */
+.section-title {
+  font-size: 12px; font-weight: 600; color: var(--t3);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;
+}
+
+/* ── Responsive ──────────────────────── */
+@media (max-width: 1050px) { .stats-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 860px) {
+  .job-detail-grid, .cand-detail-grid { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 500px) {
+  .stats-row { grid-template-columns: 1fr; }
+  #app-main { padding: 20px 16px; }
+  #app-nav { padding: 0 16px; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<nav id="app-nav">
+  <div class="nav-logo" onclick="navigate('/')">
+    <div class="nav-logo-icon">⚡</div>
+    <div class="nav-logo-text">JobFlow</div>
+  </div>
+  <div class="nav-spacer"></div>
+  <div class="nav-search-wrap">
+    <span class="nav-search-icon">🔍</span>
+    <input
+      class="nav-search-input"
+      id="nav-search"
+      type="search"
+      placeholder="Search by name or email…"
+      autocomplete="off"
+    >
+  </div>
+</nav>
+
+<main id="app-main">
+  <div class="loading-state"><div class="spinner"></div></div>
+</main>
+
+<div id="toast-container"></div>
+
+<div id="modal-overlay">
+  <div class="modal" id="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title"></span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── API ──────────────────────────────────────────────
+const api = {
+  async req(method, path, body, isForm) {
+    const opts = { method, headers: {} };
+    if (body && !isForm) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+    if (isForm) opts.body = body;
+    const res = await fetch('/api' + path, opts);
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(e.error || 'Request failed');
+    }
+    return res.json();
+  },
+  get: p => api.req('GET', p),
+  post: (p, b) => api.req('POST', p, b),
+  postForm: (p, f) => api.req('POST', p, f, true),
+  put: (p, b) => api.req('PUT', p, b),
+  patch: (p, b) => api.req('PATCH', p, b),
+  del: p => api.req('DELETE', p),
+};
+
+// ── Router ───────────────────────────────────────────
+let _jobPrefill = null; // set before navigating to /jobs/new to pre-fill the form
+const _reviewPolls = {}; // jobId → { poll, pending, total } — survives navigation
+const routes = [
+  { re: /^\/$/, fn: viewDashboard },
+  { re: /^\/jobs\/new$/, fn: () => viewJobForm(null) },
+  { re: /^\/jobs\/(\d+)\/edit$/, fn: m => viewJobForm(Number(m[1])) },
+  { re: /^\/jobs\/(\d+)$/, fn: m => viewJobDetail(Number(m[1])) },
+  { re: /^\/candidates\/(\d+)$/, fn: m => viewCandidateDetail(Number(m[1])) },
+  { re: /^\/search\?q=(.*)$/, fn: m => viewSearchResults(decodeURIComponent(m[1])) },
+];
+function navigate(path) { window.location.hash = '#' + path; }
+function router() {
+  const h = window.location.hash.replace(/^#/, '') || '/';
+  for (const r of routes) { const m = h.match(r.re); if (m) { r.fn(m); return; } }
+  setMain('<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-title">Page not found</div></div>');
+}
+window.addEventListener('hashchange', router);
+window.addEventListener('load', router);
+function setMain(html) { document.getElementById('app-main').innerHTML = html; }
+
+// ── Toast ────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<div class="toast-dot"></div><span>${escHtml(msg)}</span>`;
+  c.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'toastOut 0.22s ease forwards';
+    setTimeout(() => el.remove(), 220);
+  }, 3200);
+}
+
+// ── Modal ────────────────────────────────────────────
+function openModal(title, body, footer = '') {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = body;
+  document.getElementById('modal-footer').innerHTML = footer;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+// ── Utils ────────────────────────────────────────────
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  return new Date(s + ' UTC').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
+}
+function fmtDateTime(s) {
+  if (!s) return '—';
+  return new Date(s + ' UTC').toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+}
+function scoreClass(n) { return n >= 75 ? 'score-high' : n >= 50 ? 'score-mid' : 'score-low'; }
+function scoreColor(n) { return n >= 75 ? 'var(--green)' : n >= 50 ? 'var(--amber)' : 'var(--red)'; }
+
+// ── Dashboard ────────────────────────────────────────
+async function viewDashboard() {
+  setMain('<div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>');
+  let jobs;
+  try { jobs = await api.get('/jobs'); }
+  catch (e) { setMain(`<div class="empty-state"><div class="empty-title">Failed to load</div><div class="empty-sub">${escHtml(e.message)}</div></div>`); return; }
+
+  const total = jobs.length;
+  const totalCands = jobs.reduce((s, j) => s + (j.candidate_count || 0), 0);
+
+  const statsHtml = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--accent-dim)">💼</div>
+        <div><div class="stat-value">${total}</div><div class="stat-label">Total Jobs</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-dim)">👤</div>
+        <div><div class="stat-value">${totalCands}</div><div class="stat-label">Candidates</div></div>
+      </div>
+    </div>`;
+
+  if (!jobs.length) {
+    setMain(statsHtml + `
+      <div class="empty-state">
+        <div class="empty-icon">💼</div>
+        <div class="empty-title">No jobs yet</div>
+        <div class="empty-sub" style="margin-bottom:20px">Create your first job posting to start tracking candidates</div>
+        <button class="btn btn-primary" onclick="showJdUploadModal()">↑ Upload JD</button>
+      </div>`);
+    return;
+  }
+
+  const jobCards = jobs.map(j => `
+    <div class="job-card" onclick="navigate('/jobs/${j.id}')">
+      <div class="job-card-title">${escHtml(j.title)}</div>
+      <div class="job-card-footer">
+        <span style="font-size:11px;color:var(--t3)">${fmtDate(j.created_at)}</span>
+        <span class="job-card-count">👤 ${j.candidate_count || 0}</span>
+      </div>
+    </div>`).join('');
+
+  setMain(`
+    <div class="page-header">
+      <div>
+        <div class="page-title">Jobs</div>
+        <div class="page-sub">${total} job${total !== 1 ? 's' : ''} · ${totalCands} candidate${totalCands !== 1 ? 's' : ''}</div>
+      </div>
+      <button class="btn btn-primary" onclick="showJdUploadModal()">↑ Upload JD</button>
+    </div>
+    ${statsHtml}
+    <div class="jobs-list">${jobCards}</div>
+  `);
+}
+
+// ── Job Form ─────────────────────────────────────────
+async function viewJobForm(editId) {
+  let job = null;
+  const prefill = _jobPrefill;
+  _jobPrefill = null;
+  if (editId) {
+    setMain('<div class="loading-state"><div class="spinner"></div></div>');
+    try { job = await api.get(`/jobs/${editId}`); }
+    catch { toast('Job not found', 'error'); navigate('/'); return; }
+  }
+  const isEdit = !!job;
+
+  setMain(`
+    <div class="back-btn" onclick="navigate('${isEdit ? '/jobs/'+editId : '/'}')">
+      <span class="back-arrow">←</span> ${isEdit ? 'Back to Job' : 'Back to Pipeline'}
+    </div>
+    <div class="page-header">
+      <div class="page-title">${isEdit ? 'Edit Job' : 'New Job Posting'}</div>
+    </div>
+    <div class="card" style="max-width:660px">
+      ${prefill ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:18px;background:var(--accent-dim);border:1px solid rgba(99,102,241,0.25);border-radius:var(--r);font-size:13px;color:var(--accent2)">
+        ✨ <span>Pre-filled from PDF — review and adjust before saving</span>
+      </div>` : ''}
+      <form id="job-form">
+        <div class="form-group">
+          <label class="form-label">Job Title *</label>
+          <input class="form-input" name="title" required value="${escHtml(job?.title || prefill?.title || '')}" placeholder="e.g. Senior Backend Engineer">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Job Description</label>
+          <textarea class="form-textarea" name="description" rows="4" placeholder="Overview of the role, team and context…">${escHtml(job?.description || prefill?.description || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Key Responsibilities</label>
+          <textarea class="form-textarea" name="responsibilities" rows="5" placeholder="Day-to-day duties and responsibilities…">${escHtml(job?.responsibilities || prefill?.responsibilities || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Qualifications</label>
+          <textarea class="form-textarea" name="qualifications" rows="4" placeholder="Required skills, experience and education…">${escHtml(job?.qualifications || prefill?.qualifications || '')}</textarea>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px">
+          <button type="button" class="btn btn-secondary" onclick="navigate('${isEdit ? '/jobs/'+editId : '/'}')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="job-form-btn">${isEdit ? 'Save Changes' : 'Create Job'}</button>
+        </div>
+      </form>
+    </div>
+  `);
+
+  document.getElementById('job-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('job-form-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try {
+      const saved = isEdit ? await api.put(`/jobs/${editId}`, data) : await api.post('/jobs', data);
+      toast(isEdit ? 'Job updated' : 'Job created', 'success');
+      navigate('/jobs/' + saved.id);
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false; btn.textContent = isEdit ? 'Save Changes' : 'Create Job';
+    }
+  });
+}
+
+// ── Job Detail ───────────────────────────────────────
+async function viewJobDetail(jobId) {
+  setMain('<div class="loading-state"><div class="spinner"></div><span>Loading…</span></div>');
+  let job, candidates;
+  try {
+    [job, candidates] = await Promise.all([api.get(`/jobs/${jobId}`), api.get(`/jobs/${jobId}/candidates`)]);
+  } catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-title">Not found</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+
+  const candRows = candidates.length
+    ? candidates.map(c => {
+        const scoreHtml = c.match_score != null
+          ? `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`
+          : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
+        return `
+          <div class="cand-row" id="cand-row-${c.id}" data-score="${c.match_score != null ? c.match_score : 'none'}" data-status="${c.status}" onclick="navigate('/candidates/${c.id}')">
+            <div class="cand-avatar">${initials(c.name)}</div>
+            <div class="cand-info">
+              <div class="cand-name">${escHtml(c.name)}</div>
+              <div class="cand-email">${escHtml(c.email || 'No email')}</div>
+            </div>
+            <span class="badge badge-${c.status}">${c.status}</span>
+            <span class="cand-score-area">${scoreHtml}</span>
+          </div>`;
+      }).join('')
+    : `<div class="empty-state" style="padding:36px 20px">
+        <div class="empty-icon">📄</div>
+        <div class="empty-title">No candidates yet</div>
+        <div class="empty-sub">Upload a CV to add the first candidate</div>
+       </div>`;
+
+  setMain(`
+    <div class="back-btn" onclick="navigate('/')"><span class="back-arrow">←</span> Pipeline</div>
+    <div class="page-header">
+      <div>
+        <div class="page-title">${escHtml(job.title)}</div>
+        <div class="page-sub">${escHtml(job.title)} · Posted ${fmtDate(job.created_at)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        ${job.jd_filename ? `<a href="/api/jobs/${job.id}/jd" class="btn btn-secondary btn-sm" target="_blank">↓ Download JD</a>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="navigate('/jobs/${job.id}/edit')">Edit</button>
+        <button class="btn btn-danger btn-sm" id="delete-job-btn">Delete</button>
+      </div>
+    </div>
+
+    <div class="job-detail-grid">
+      <div>
+        <div class="card">
+          ${job.description ? `<div class="info-block"><div class="info-label">Job Description</div><div class="info-value">${escHtml(job.description)}</div></div>` : ''}
+          ${job.responsibilities ? `<div class="info-block"><div class="info-label">Key Responsibilities</div><div class="info-value">${escHtml(job.responsibilities)}</div></div>` : ''}
+          ${job.qualifications ? `<div class="info-block"><div class="info-label">Qualifications</div><div class="info-value">${escHtml(job.qualifications)}</div></div>` : ''}
+          ${!job.description && !job.responsibilities && !job.qualifications ? `<div class="info-value" style="color:var(--t3)">No description added</div>` : ''}
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="section-title" style="margin:0">Candidates <span style="color:var(--t4);font-weight:400">(${candidates.length})</span></div>
+          <div style="display:flex;gap:8px">
+            ${candidates.length ? `<button class="btn btn-secondary btn-sm" id="review-all-btn">🤖 Review All</button>` : ''}
+            ${candidates.length ? `<button class="btn btn-secondary btn-sm" id="download-cvs-btn">↓ Download CVs</button>` : ''}
+            <button class="btn btn-primary btn-sm" id="upload-cv-btn">↑ Upload CV</button>
+          </div>
+        </div>
+        ${candidates.length ? `
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <select id="score-filter" class="filter-select">
+            <option value="">All scores</option>
+            <option value="no">No review</option>
+            <option value="max:49">&lt;50%</option>
+            <option value="min:50">50%+</option>
+            <option value="min:60">60%+</option>
+            <option value="min:70">70%+</option>
+            <option value="min:80">80%+</option>
+            <option value="min:90">90%+</option>
+          </select>
+          <select id="status-filter" class="filter-select">
+            <option value="">All statuses</option>
+            <option value="new">New</option>
+            <option value="reviewing">Reviewing</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>` : ''}
+        ${candRows}
+      </div>
+    </div>
+  `);
+
+  document.getElementById('upload-cv-btn').addEventListener('click', () => showUploadModal(jobId));
+  document.getElementById('delete-job-btn').addEventListener('click', () => confirmDeleteJob(job));
+  if (candidates.length) {
+    document.getElementById('review-all-btn')?.addEventListener('click', () => runReviewAll(jobId, candidates));
+    document.getElementById('download-cvs-btn').addEventListener('click', async () => {
+      const visibleIds = Array.from(document.querySelectorAll('.cand-row'))
+        .filter(r => r.style.display !== 'none')
+        .map(r => Number(r.id.replace('cand-row-', '')));
+      if (!visibleIds.length) { toast('No candidates to download', 'error'); return; }
+      const btn = document.getElementById('download-cvs-btn');
+      btn.disabled = true; btn.textContent = 'Zipping…';
+      try {
+        const resp = await fetch(`/api/jobs/${jobId}/export-cvs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidate_ids: visibleIds }),
+        });
+        if (!resp.ok) { const e = await resp.json(); throw new Error(e.error); }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = resp.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'cvs.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) { toast(err.message, 'error'); }
+      finally { btn.disabled = false; btn.textContent = '↓ Download CVs'; }
+    });
+    document.getElementById('score-filter').addEventListener('change', applyFilters);
+    document.getElementById('status-filter').addEventListener('change', applyFilters);
+    function applyFilters() {
+      const scoreVal = document.getElementById('score-filter').value;
+      const statusVal = document.getElementById('status-filter').value;
+      const [scoreType, scoreNum] = scoreVal.includes(':') ? scoreVal.split(':') : ['', ''];
+      document.querySelectorAll('.cand-row').forEach(row => {
+        const score = row.dataset.score;
+        let scoreMatch;
+        if (!scoreVal) scoreMatch = true;
+        else if (scoreVal === 'no') scoreMatch = score === 'none';
+        else if (scoreType === 'max') scoreMatch = score !== 'none' && Number(score) <= Number(scoreNum);
+        else scoreMatch = score !== 'none' && Number(score) >= Number(scoreNum);
+        const statusMatch = !statusVal || row.dataset.status === statusVal;
+        row.style.display = scoreMatch && statusMatch ? '' : 'none';
+      });
+    }
+  }
+
+  // Re-attach UI if a review poll is already running for this job
+  if (_reviewPolls[jobId]) {
+    const { pending, total } = _reviewPolls[jobId];
+    const btn = document.getElementById('review-all-btn');
+    if (btn) {
+      btn.disabled = true;
+      const done = total - pending.size;
+      btn.innerHTML = `<div class="spinner" style="width:12px;height:12px;border-width:2px"></div> ${done}/${total}`;
+    }
+    pending.forEach(id => {
+      const scoreEl = document.querySelector(`#cand-row-${id} .cand-score-area`);
+      if (scoreEl) scoreEl.innerHTML = `<div class="spinner" style="width:13px;height:13px;border-width:2px"></div>`;
+    });
+  }
+}
+
+// ── Candidate Detail ─────────────────────────────────
+async function viewCandidateDetail(candidateId) {
+  setMain('<div class="loading-state"><div class="spinner"></div><span>Loading candidate…</span></div>');
+  let candidate;
+  try { candidate = await api.get(`/candidates/${candidateId}`); }
+  catch { setMain(`<div class="empty-state"><div class="empty-title">Candidate not found</div></div>`); return; }
+
+  const review = candidate.ai_review;
+  const feedbackList = candidate.feedback || [];
+  const statusOptions = ['new', 'reviewing', 'shortlisted', 'rejected'];
+
+  const workExp = review?.work_experience || [];
+  const expContent = workExp.length
+    ? `<div class="exp-timeline">${workExp.map(e => `
+        <div class="exp-item">
+          <div class="exp-header">
+            <div>
+              <div class="exp-title">${escHtml(e.title)}</div>
+              <div class="exp-company">${escHtml(e.company)}</div>
+            </div>
+            ${e.duration ? `<div class="exp-duration">${escHtml(e.duration)}</div>` : ''}
+          </div>
+          ${e.summary ? `<div class="exp-summary">${escHtml(e.summary)}</div>` : ''}
+        </div>`).join('')}</div>`
+    : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience data — run AI Review to extract it.</div>`;
+
+  const isBeingReviewed = Object.values(_reviewPolls).some(p => p.pending.has(candidateId));
+
+  const reviewContent = review && !isBeingReviewed ? renderReview(review)
+    : `<div class="empty-state" style="padding:32px">
+        <div class="empty-icon">🤖</div>
+        <div class="empty-title">No review yet</div>
+        <div class="empty-sub">Click "Run AI Review" to analyse this CV</div>
+       </div>`;
+
+  const feedbackContent = feedbackList.length
+    ? feedbackList.map(f => `
+        <div class="fb-item">
+          <div class="fb-meta">
+            <span class="fb-date">${fmtDateTime(f.created_at)}</span>
+            ${f.recommendation ? `<span class="badge badge-${f.recommendation}">${f.recommendation}</span>` : ''}
+          </div>
+          <div class="fb-note">${escHtml(f.note)}</div>
+        </div>`).join('')
+    : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No feedback yet.</div>`;
+
+  setMain(`
+    <div class="back-btn" onclick="navigate('/jobs/${candidate.job_id}')"><span class="back-arrow">←</span> Back to Job</div>
+    <div class="page-header">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="cand-avatar" style="width:48px;height:48px;border-radius:14px;font-size:16px">${initials(candidate.name)}</div>
+        <div>
+          <div class="page-title" style="font-size:22px">${escHtml(candidate.name)}</div>
+          <div class="page-sub">${escHtml(candidate.email || 'No email')} · Applied ${fmtDate(candidate.created_at)}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select class="form-select form-input" id="status-select" style="width:auto;padding:7px 12px;font-size:13px">
+          ${statusOptions.map(s => `<option value="${s}" ${candidate.status===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}
+        </select>
+        ${candidate.cv_filename ? `<a href="/api/candidates/${candidate.id}/cv" class="btn btn-secondary btn-sm" target="_blank">↓ Download CV</a>` : ''}
+        <button class="btn btn-danger btn-sm" id="delete-cand-btn">Delete</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="section-title">💼 Work Experience</div>
+      <div id="exp-panel">${expContent}</div>
+    </div>
+
+    <div class="cand-detail-grid">
+      <div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div class="section-title" style="margin:0">AI Review</div>
+            <button class="btn btn-primary btn-sm" id="run-review-btn" ${isBeingReviewed ? 'disabled' : ''}>
+              ${isBeingReviewed ? '<div class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></div> Analysing…' : review ? '↺ Re-run' : '▶ Run Review'}
+            </button>
+          </div>
+          <div id="review-panel">${reviewContent}</div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="section-title">Add Feedback</div>
+          <form id="feedback-form">
+            <div class="form-group">
+              <textarea class="form-textarea" name="note" rows="3" placeholder="Your notes on this candidate…" required></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Recommendation</label>
+              <select class="form-select form-input" name="recommendation">
+                <option value="">— None —</option>
+                <option value="hire">✅ Hire</option>
+                <option value="reject">❌ Reject</option>
+                <option value="hold">⏸ Hold</option>
+              </select>
+            </div>
+            <div style="text-align:right">
+              <button type="submit" class="btn btn-primary btn-sm">Save Note</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="section-title">Feedback Log</div>
+          <div id="feedback-list">${feedbackContent}</div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  // Status
+  document.getElementById('status-select').addEventListener('change', async e => {
+    try { await api.patch(`/candidates/${candidateId}/status`, { status: e.target.value }); toast('Status updated', 'success'); }
+    catch (err) { toast(err.message, 'error'); }
+  });
+
+  // AI Review
+  document.getElementById('run-review-btn').addEventListener('click', async () => {
+    if (Object.values(_reviewPolls).some(p => p.pending.has(candidateId))) return;
+    const btn = document.getElementById('run-review-btn');
+    const panel = document.getElementById('review-panel');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Analysing…';
+    panel.innerHTML = `<div style="padding:12px 0">
+      <div class="skeleton" style="height:80px;border-radius:12px;margin-bottom:16px"></div>
+      <div class="skeleton" style="height:13px;width:55%;margin-bottom:10px"></div>
+      <div class="skeleton" style="height:13px;width:80%;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:13px;width:70%;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:13px;width:60%"></div>
+    </div>`;
+    try {
+      const rev = await api.post(`/candidates/${candidateId}/ai-review`, {});
+      panel.innerHTML = renderReview(rev);
+      const newExp = rev.work_experience || [];
+      const expPanel = document.getElementById('exp-panel');
+      if (expPanel) expPanel.innerHTML = newExp.length
+        ? `<div class="exp-timeline">${newExp.map(e => `
+            <div class="exp-item">
+              <div class="exp-header">
+                <div>
+                  <div class="exp-title">${escHtml(e.title)}</div>
+                  <div class="exp-company">${escHtml(e.company)}</div>
+                </div>
+                ${e.duration ? `<div class="exp-duration">${escHtml(e.duration)}</div>` : ''}
+              </div>
+              ${e.summary ? `<div class="exp-summary">${escHtml(e.summary)}</div>` : ''}
+            </div>`).join('')}</div>`
+        : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience found in CV.</div>`;
+      btn.textContent = '↺ Re-run';
+      toast('AI review complete', 'success');
+    } catch (err) {
+      panel.innerHTML = `<div style="padding:14px;color:var(--red);font-size:13px;background:var(--red-dim);border-radius:var(--r);border:1px solid rgba(244,63,94,0.2)">
+        ⚠ ${escHtml(err.message)}</div>`;
+      btn.textContent = '↺ Retry';
+      toast(err.message, 'error');
+    } finally { btn.disabled = false; }
+  });
+
+  // Feedback
+  document.getElementById('feedback-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    if (!data.recommendation) delete data.recommendation;
+    try {
+      const fb = await api.post(`/candidates/${candidateId}/feedback`, data);
+      toast('Feedback saved', 'success');
+      e.target.reset();
+      const list = document.getElementById('feedback-list');
+      const el = document.createElement('div');
+      el.className = 'fb-item';
+      el.innerHTML = `
+        <div class="fb-meta">
+          <span class="fb-date">${fmtDateTime(fb.created_at)}</span>
+          ${fb.recommendation ? `<span class="badge badge-${fb.recommendation}">${fb.recommendation}</span>` : ''}
+        </div>
+        <div class="fb-note">${escHtml(fb.note)}</div>`;
+      if (list.textContent.includes('No feedback')) list.innerHTML = '';
+      list.prepend(el);
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Delete
+  document.getElementById('delete-cand-btn').addEventListener('click', () => {
+    openModal('Delete Candidate',
+      `<p style="font-size:14px;color:var(--t2)">Delete <strong>${escHtml(candidate.name)}</strong>? This cannot be undone.</p>`,
+      `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+       <button class="btn btn-danger" id="confirm-del-cand">Delete</button>`
+    );
+    document.getElementById('confirm-del-cand').addEventListener('click', async () => {
+      try {
+        await api.del(`/candidates/${candidateId}`);
+        closeModal(); toast('Candidate deleted', 'info');
+        navigate('/jobs/' + candidate.job_id);
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+}
+
+// ── Render Review ────────────────────────────────────
+function renderReview(review) {
+  const sc = review.match_score ?? '?';
+  const cls = typeof sc === 'number' ? scoreClass(sc) : 'score-mid';
+  const strengths = review.strengths || [];
+  const gaps = review.gaps || [];
+  const redFlags = review.red_flags || [];
+
+  return `
+    <div class="review-score-area">
+      <div class="score-ring ${cls}">
+        <span>${sc}</span>
+        <span style="font-size:10px;font-weight:400;opacity:0.7">/ 100</span>
+      </div>
+      <div class="review-score-info">
+        <div class="review-score-title">Match Score</div>
+        <div class="review-score-sub">${sc >= 75 ? 'Strong match for this role' : sc >= 50 ? 'Moderate match — worth reviewing' : 'Weak match — significant gaps'}</div>
+      </div>
+    </div>
+
+    ${review.summary ? `<div class="review-summary">${escHtml(review.summary)}</div>` : ''}
+
+    ${strengths.length ? `
+      <div class="review-section">
+        <div class="review-section-title"><span style="color:var(--green)">✓</span> Strengths</div>
+        ${strengths.map(s => `<div class="review-item"><div class="review-item-dot" style="background:var(--green)"></div><span>${escHtml(s)}</span></div>`).join('')}
+      </div>` : ''}
+
+    ${gaps.length ? `
+      <div class="review-section">
+        <div class="review-section-title"><span style="color:var(--amber)">△</span> Gaps</div>
+        ${gaps.map(g => `<div class="review-item"><div class="review-item-dot" style="background:var(--amber)"></div><span>${escHtml(g)}</span></div>`).join('')}
+      </div>` : ''}
+
+    ${redFlags.length ? `
+      <div class="review-section">
+        <div class="review-section-title"><span style="color:var(--red)">⚑</span> Red Flags</div>
+        ${redFlags.map(r => `<div class="review-item"><div class="review-item-dot" style="background:var(--red)"></div><span>${escHtml(r)}</span></div>`).join('')}
+      </div>` : ''}
+
+    <div style="font-size:11px;color:var(--t3);margin-top:10px;font-family:'JetBrains Mono',monospace">
+      Reviewed ${fmtDateTime(review.created_at)}
+    </div>`;
+}
+
+// ── Upload Modal (multi-file) ─────────────────────────
+function showUploadModal(jobId) {
+  openModal('Upload CVs',
+    `<div class="drop-zone" id="drop-zone" onclick="document.getElementById('cv-files').click()">
+       <div class="drop-zone-icon">📎</div>
+       <div class="drop-zone-text">Click to browse or drag & drop</div>
+       <div class="drop-zone-hint">PDF or DOCX · Up to 20 files · Max 10 MB each</div>
+       <input type="file" id="cv-files" accept=".pdf,.docx" multiple>
+     </div>
+     <div id="file-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="upload-btn" disabled>Upload</button>`
+  );
+
+  const fi = document.getElementById('cv-files');
+  const dz = document.getElementById('drop-zone');
+  let selectedFiles = [];
+
+  function renderFileList() {
+    const list = document.getElementById('file-list');
+    if (!selectedFiles.length) { list.innerHTML = ''; return; }
+    list.innerHTML = selectedFiles.map((f, i) => `
+      <div class="upload-file-row" id="ufile-${i}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:16px">${f.name.endsWith('.pdf') ? '📄' : '📝'}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${(f.size/1024).toFixed(0)} KB</div>
+          </div>
+          <button onclick="removeFile(${i})" style="background:none;color:var(--t3);font-size:16px;padding:2px 6px;border-radius:6px" title="Remove">✕</button>
+        </div>
+        <div class="upload-progress" id="uprog-${i}" style="display:none;margin-top:6px;font-size:12px;color:var(--t3)"></div>
+      </div>`).join('');
+    document.getElementById('upload-btn').disabled = false;
+  }
+
+  window.removeFile = (i) => {
+    selectedFiles.splice(i, 1);
+    renderFileList();
+    if (!selectedFiles.length) document.getElementById('upload-btn').disabled = true;
+  };
+
+  function addFiles(files) {
+    for (const f of files) {
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (!['pdf','docx'].includes(ext)) { toast(`Skipped ${f.name} — only PDF/DOCX allowed`, 'error'); continue; }
+      if (f.size > 10 * 1024 * 1024) { toast(`Skipped ${f.name} — exceeds 10 MB`, 'error'); continue; }
+      if (selectedFiles.length >= 20) { toast('Max 20 files at once', 'error'); break; }
+      selectedFiles.push(f);
+    }
+    renderFileList();
+  }
+
+  fi.addEventListener('change', () => { addFiles(Array.from(fi.files)); fi.value = ''; });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('dragover');
+    addFiles(Array.from(e.dataTransfer.files));
+  });
+
+  document.getElementById('upload-btn').addEventListener('click', async () => {
+    if (!selectedFiles.length) return;
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true; btn.textContent = `Uploading ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}…`;
+
+    // Show per-file pending state
+    selectedFiles.forEach((_, i) => {
+      const p = document.getElementById(`uprog-${i}`);
+      if (p) { p.style.display = 'block'; p.textContent = '⏳ Uploading…'; }
+    });
+
+    const form = new FormData();
+    selectedFiles.forEach(f => form.append('cvs', f));
+
+    let results;
+    try {
+      results = await api.postForm(`/jobs/${jobId}/upload-cv`, form);
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.disabled = false; btn.textContent = 'Upload';
+      return;
+    }
+
+    // Show per-file results
+    results.forEach((r, i) => {
+      const p = document.getElementById(`uprog-${i}`);
+      if (!p) return;
+      p.style.display = 'block';
+      if (r.success) {
+        p.innerHTML = `<span style="color:var(--green)">✓ Saved as <strong>${escHtml(r.candidate.name)}</strong>${r.candidate.email ? ' · ' + escHtml(r.candidate.email) : ''}</span>`;
+      } else {
+        p.innerHTML = `<span style="color:var(--red)">✕ ${escHtml(r.error)}</span>`;
+      }
+    });
+
+    const ok = results.filter(r => r.success).length;
+    const fail = results.length - ok;
+    toast(`${ok} CV${ok !== 1 ? 's' : ''} uploaded${fail ? `, ${fail} failed` : ''}`, ok > 0 ? 'success' : 'error');
+
+    // Navigate to candidate if single upload, else reload job page
+    setTimeout(() => {
+      closeModal();
+      if (ok === 1) {
+        navigate('/candidates/' + results.find(r => r.success).candidate.id);
+      } else if (window.location.hash === '#/jobs/' + jobId) {
+        viewJobDetail(jobId);
+      } else {
+        navigate('/jobs/' + jobId);
+      }
+    }, ok > 1 ? 1800 : 600);
+  });
+}
+
+// ── Nav Search ───────────────────────────────────────
+(function () {
+  const input = document.getElementById('nav-search');
+  let timer;
+
+  // Sync input value when navigating to a search route
+  window.addEventListener('hashchange', syncSearchInput);
+  window.addEventListener('load', syncSearchInput);
+  function syncSearchInput() {
+    const h = window.location.hash.replace(/^#/, '') || '/';
+    const m = h.match(/^\/search\?q=(.*)/);
+    input.value = m ? decodeURIComponent(m[1]) : '';
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { navigate('/'); return; }
+    timer = setTimeout(() => navigate('/search?q=' + encodeURIComponent(q)), 250);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { input.value = ''; navigate('/'); input.blur(); }
+  });
+})();
+
+// ── Search Results View ───────────────────────────────
+async function viewSearchResults(query) {
+  if (!query) { navigate('/'); return; }
+  setMain('<div class="loading-state"><div class="spinner"></div><span>Searching…</span></div>');
+  let results;
+  try { results = await api.get('/candidates/search?q=' + encodeURIComponent(query)); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-title">Search failed</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+
+  const rows = results.length
+    ? results.map(c => {
+        const scoreHtml = c.match_score != null
+          ? `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`
+          : '';
+        return `
+          <div class="cand-row" onclick="navigate('/candidates/${c.id}')">
+            <div class="cand-avatar">${initials(c.name)}</div>
+            <div class="cand-info">
+              <div class="cand-name">${escHtml(c.name)}</div>
+              <div class="cand-email">${escHtml(c.email || 'No email')} · <span style="color:var(--accent2)">${escHtml(c.job_title)}</span> @ ${escHtml(c.job_company)}</div>
+            </div>
+            <span class="badge badge-${c.status}">${c.status}</span>
+            ${scoreHtml}
+          </div>`;
+      }).join('')
+    : `<div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">No candidates found</div>
+        <div class="empty-sub">No results for "${escHtml(query)}"</div>
+       </div>`;
+
+  setMain(`
+    <div class="page-header">
+      <div>
+        <div class="page-title">Search Results</div>
+        <div class="page-sub">${results.length} candidate${results.length !== 1 ? 's' : ''} matching "${escHtml(query)}" by name or email</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="navigate('/')">← Back to Pipeline</button>
+    </div>
+    ${rows}
+  `);
+}
+
+// ── Review All ────────────────────────────────────────
+async function runReviewAll(jobId, candidates) {
+  const btn = document.getElementById('review-all-btn');
+  if (!btn) return;
+
+  const reviewable = candidates.filter(c => c.cv_text && c.status === 'new');
+  if (!reviewable.length) { toast('No new candidates to review', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="width:12px;height:12px;border-width:2px"></div> Starting…';
+
+  // Mark all pending rows with spinner
+  reviewable.forEach(c => {
+    const scoreEl = document.querySelector(`#cand-row-${c.id} .cand-score-area`);
+    if (scoreEl) scoreEl.innerHTML = `<div class="spinner" style="width:13px;height:13px;border-width:2px"></div>`;
+  });
+
+  try {
+    const { started } = await api.post(`/jobs/${jobId}/review-all`, {});
+    if (!started) { btn.disabled = false; btn.innerHTML = '🤖 Review All'; return; }
+  } catch (err) {
+    toast(err.message, 'error');
+    btn.disabled = false; btn.innerHTML = '🤖 Review All';
+    return;
+  }
+
+  // Poll until all reviewable candidates have a score
+  const pending = new Set(reviewable.map(c => c.id));
+  const poll = setInterval(async () => {
+    try {
+      const updated = await api.get(`/jobs/${jobId}/candidates`);
+      updated.forEach(c => {
+        if (!pending.has(c.id)) return;
+        if (c.match_score != null) {
+          pending.delete(c.id);
+          const scoreEl = document.querySelector(`#cand-row-${c.id} .cand-score-area`);
+          if (scoreEl) scoreEl.innerHTML = `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`;
+          const done = reviewable.length - pending.size;
+          const b = document.getElementById('review-all-btn');
+          if (b) b.innerHTML = `<div class="spinner" style="width:12px;height:12px;border-width:2px"></div> ${done}/${reviewable.length}`;
+        }
+      });
+      if (!pending.size) {
+        clearInterval(poll);
+        delete _reviewPolls[jobId];
+        const b = document.getElementById('review-all-btn');
+        if (b) { b.disabled = false; b.innerHTML = '🤖 Review All'; }
+        toast(`Reviews complete (${reviewable.length} candidates)`, 'success');
+      }
+    } catch { clearInterval(poll); delete _reviewPolls[jobId]; }
+  }, 2000);
+  _reviewPolls[jobId] = { poll, pending, total: reviewable.length };
+}
+
+// ── JD Upload Modal ───────────────────────────────────
+function showJdUploadModal() {
+  openModal('Create Job from PDF',
+    `<div class="drop-zone" id="jd-drop-zone" onclick="document.getElementById('jd-file').click()">
+       <div class="drop-zone-icon">📄</div>
+       <div class="drop-zone-text">Click to browse or drag & drop a job description PDF</div>
+       <div class="drop-zone-hint">PDF only · Max 10 MB</div>
+       <input type="file" id="jd-file" accept=".pdf" style="display:none">
+     </div>
+     <div id="jd-file-info" style="margin-top:12px"></div>
+     <div id="jd-error" style="margin-top:10px;display:none;font-size:13px;color:var(--red);padding:10px 12px;background:var(--red-dim);border-radius:var(--r);border:1px solid rgba(244,63,94,0.2)"></div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-primary" id="jd-extract-btn" disabled>Extract Fields</button>`
+  );
+
+  const fi = document.getElementById('jd-file');
+  const dz = document.getElementById('jd-drop-zone');
+  let selectedFile = null;
+
+  function setFile(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      showJdError('Only PDF files are supported.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showJdError('File exceeds 10 MB limit.');
+      return;
+    }
+    selectedFile = file;
+    document.getElementById('jd-file-info').innerHTML = `
+      <div class="upload-file-row" style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">📄</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(file.name)}</div>
+          <div style="font-size:11px;color:var(--t3)">${(file.size/1024).toFixed(0)} KB</div>
+        </div>
+      </div>`;
+    document.getElementById('jd-extract-btn').disabled = false;
+    document.getElementById('jd-error').style.display = 'none';
+  }
+
+  function showJdError(msg) {
+    const el = document.getElementById('jd-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  fi.addEventListener('change', () => { setFile(fi.files[0]); fi.value = ''; });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); setFile(e.dataTransfer.files[0]); });
+
+  document.getElementById('jd-extract-btn').addEventListener('click', async () => {
+    if (!selectedFile) return;
+    const btn = document.getElementById('jd-extract-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Extracting…';
+
+    const form = new FormData();
+    form.append('jd', selectedFile);
+    try {
+      const job = await api.postForm('/jobs/upload-jd', form);
+      closeModal();
+      navigate('/jobs/' + job.id);
+    } catch (err) {
+      showJdError(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Extract Fields';
+    }
+  });
+}
+
+// ── Delete Job ───────────────────────────────────────
+function confirmDeleteJob(job) {
+  openModal('Delete Job',
+    `<p style="font-size:14px;color:var(--t2)">Delete <strong>${escHtml(job.title)}</strong>?</p>
+     <p style="margin-top:10px;font-size:13px;color:var(--red);padding:10px 12px;background:var(--red-dim);border-radius:var(--r)">
+       ⚠ All candidates, reviews and feedback will be permanently deleted.
+     </p>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-danger" id="confirm-del-job">Delete Job</button>`
+  );
+  document.getElementById('confirm-del-job').addEventListener('click', async () => {
+    try {
+      await api.del(`/jobs/${job.id}`);
+      closeModal(); toast('Job deleted', 'info'); navigate('/');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+</script>
+</body>
+</html>

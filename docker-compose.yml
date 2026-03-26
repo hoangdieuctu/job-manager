@@ -1,0 +1,18 @@
+services:
+  app:
+    image: hoangdieuctu/jobflow-pub:1.0.1
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - REVIEW_MODEL=${REVIEW_MODEL:-claude-opus-4-6}
+      - EXTRACTION_MODEL=${EXTRACTION_MODEL:-claude-haiku-4-5-20251001}
+    volumes:
+      - jobflow_db:/app/jobs.db
+      - jobflow_uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  jobflow_db:
+  jobflow_uploads:

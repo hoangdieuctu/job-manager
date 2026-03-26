@@ -15,94 +15,177 @@ function getDb() {
     db = new DatabaseSync(DB_PATH);
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA foreign_keys = ON');
-    initSchema();
+    runMigrations();
   }
   return db;
 }
 
-function initSchema() {
+// ── Migrations ────────────────────────────────────────────────────────────────
+// Each entry is { id, description, up }.
+// - id must be unique and monotonically increasing (use integers).
+// - up() runs inside a transaction; throw to abort.
+// - Never edit or delete an existing migration — only append new ones.
+// ─────────────────────────────────────────────────────────────────────────────
+const MIGRATIONS = [
+  {
+    id: 1,
+    description: 'Initial schema',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          company TEXT NOT NULL DEFAULT '',
+          description TEXT,
+          responsibilities TEXT,
+          qualifications TEXT,
+          jd_filename TEXT,
+          jd_original_name TEXT,
+          status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'screening', 'closed')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS candidates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          email TEXT,
+          cv_filename TEXT,
+          cv_original_name TEXT,
+          cv_text TEXT,
+          status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'reviewing', 'approved', 'rejected')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS ai_reviews (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+          match_score INTEGER,
+          strengths TEXT,
+          gaps TEXT,
+          red_flags TEXT,
+          summary TEXT,
+          work_experience TEXT,
+          warnings TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS feedback (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+          note TEXT NOT NULL,
+          recommendation TEXT CHECK(recommendation IN ('hire', 'reject', 'hold', NULL)),
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS warning_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          text TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
+  {
+    id: 2,
+    description: 'Seed default config values',
+    up(db) {
+      const defaults = {
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
+        REVIEW_MODEL: 'claude-opus-4-6',
+        EXTRACTION_MODEL: 'claude-haiku-4-5-20251001',
+      };
+      const insert = db.prepare(`INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)`);
+      for (const [k, v] of Object.entries(defaults)) insert.run(k, v);
+    },
+  },
+  {
+    id: 3,
+    description: 'Fix candidates CHECK constraint: replace shortlisted with approved',
+    up(db) {
+      // Recreate candidates table with corrected CHECK constraint
+      db.exec(`PRAGMA foreign_keys = OFF`);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS candidates_v3 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          email TEXT,
+          cv_filename TEXT,
+          cv_original_name TEXT,
+          cv_text TEXT,
+          status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'reviewing', 'approved', 'rejected')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      // Copy rows, remapping shortlisted → approved
+      db.exec(`
+        INSERT INTO candidates_v3
+        SELECT id, job_id, name, email, cv_filename, cv_original_name, cv_text,
+          CASE WHEN status = 'shortlisted' THEN 'approved' ELSE status END,
+          created_at, updated_at
+        FROM candidates;
+      `);
+      db.exec(`DROP TABLE candidates`);
+      db.exec(`ALTER TABLE candidates_v3 RENAME TO candidates`);
+      db.exec(`PRAGMA foreign_keys = ON`);
+    },
+  },
+  // ── Add new migrations here ──────────────────────────────────────────────
+  // {
+  //   id: 4,
+  //   description: 'Example: add notes column to jobs',
+  //   up(db) {
+  //     db.exec(`ALTER TABLE jobs ADD COLUMN notes TEXT`);
+  //   },
+  // },
+];
+
+function runMigrations() {
+  // Bootstrap the migrations tracking table
   db.exec(`
-    CREATE TABLE IF NOT EXISTS jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      company TEXT NOT NULL,
-      description TEXT,
-      responsibilities TEXT,
-      qualifications TEXT,
-      jd_filename TEXT,
-      jd_original_name TEXT,
-      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'screening', 'closed')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS candidates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      email TEXT,
-      cv_filename TEXT,
-      cv_original_name TEXT,
-      cv_text TEXT,
-      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'reviewing', 'approved', 'rejected')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS ai_reviews (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      match_score INTEGER,
-      strengths TEXT,
-      gaps TEXT,
-      red_flags TEXT,
-      summary TEXT,
-      work_experience TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS feedback (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      note TEXT NOT NULL,
-      recommendation TEXT CHECK(recommendation IN ('hire', 'reject', 'hold', NULL)),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS warning_rules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      text TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER PRIMARY KEY,
+      description TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
   `);
 
-  // Migrate existing DBs: add new columns if missing
-  const cols = db.prepare(`PRAGMA table_info(jobs)`).all().map(r => r.name);
-  if (!cols.includes('responsibilities'))  db.exec(`ALTER TABLE jobs ADD COLUMN responsibilities TEXT`);
-  if (!cols.includes('qualifications'))    db.exec(`ALTER TABLE jobs ADD COLUMN qualifications TEXT`);
-  if (!cols.includes('jd_filename'))       db.exec(`ALTER TABLE jobs ADD COLUMN jd_filename TEXT`);
-  if (!cols.includes('jd_original_name'))  db.exec(`ALTER TABLE jobs ADD COLUMN jd_original_name TEXT`);
-  // Rename shortlisted → approved for existing rows
-  db.exec(`UPDATE candidates SET status = 'approved' WHERE status = 'shortlisted'`);
-  const reviewCols = db.prepare(`PRAGMA table_info(ai_reviews)`).all().map(r => r.name);
-  if (!reviewCols.includes('work_experience')) db.exec(`ALTER TABLE ai_reviews ADD COLUMN work_experience TEXT`);
-  if (!reviewCols.includes('warnings')) db.exec(`ALTER TABLE ai_reviews ADD COLUMN warnings TEXT`);
+  const applied = new Set(
+    db.prepare(`SELECT id FROM schema_migrations`).all().map(r => r.id)
+  );
 
-  // Seed config from env on first run (only if keys don't exist yet)
-  const defaults = {
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
-    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
-    REVIEW_MODEL: 'claude-opus-4-6',
-    EXTRACTION_MODEL: 'claude-haiku-4-5-20251001',
-  };
-  const insert = db.prepare(`INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)`);
-  for (const [k, v] of Object.entries(defaults)) insert.run(k, v);
+  const pending = MIGRATIONS.filter(m => !applied.has(m.id));
+  if (!pending.length) return;
+
+  const insertMigration = db.prepare(
+    `INSERT INTO schema_migrations (id, description) VALUES (?, ?)`
+  );
+
+  for (const migration of pending) {
+    console.log(`[db] Running migration ${migration.id}: ${migration.description}`);
+    // Run inside a transaction so a failure leaves the DB unchanged
+    db.exec('BEGIN');
+    try {
+      migration.up(db);
+      insertMigration.run(migration.id, migration.description);
+      db.exec('COMMIT');
+      console.log(`[db] Migration ${migration.id} applied.`);
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw new Error(`Migration ${migration.id} failed: ${err.message}`);
+    }
+  }
 }
 
 
@@ -115,9 +198,13 @@ function listJobs() {
       SUM(CASE WHEN c.status = 'new' THEN 1 ELSE 0 END) as count_new,
       SUM(CASE WHEN c.status = 'reviewing' THEN 1 ELSE 0 END) as count_reviewing,
       SUM(CASE WHEN c.status = 'approved' THEN 1 ELSE 0 END) as count_approved,
-      SUM(CASE WHEN c.status = 'rejected' THEN 1 ELSE 0 END) as count_rejected
+      SUM(CASE WHEN c.status = 'rejected' THEN 1 ELSE 0 END) as count_rejected,
+      COUNT(r.id) as scored_count,
+      SUM(CASE WHEN r.match_score < 50 THEN 1 ELSE 0 END) as score_low_count,
+      SUM(CASE WHEN r.match_score >= 70 THEN 1 ELSE 0 END) as score_high_count
     FROM jobs j
     LEFT JOIN candidates c ON c.job_id = j.id
+    LEFT JOIN ai_reviews r ON r.candidate_id = c.id
     GROUP BY j.id
     ORDER BY j.created_at DESC
   `).all();

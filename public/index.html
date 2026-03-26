@@ -440,6 +440,10 @@ input, textarea, select { font-family: inherit; outline: none; }
   background: var(--surface2); padding: 2px 7px; border-radius: 6px;
   border: 1px solid var(--border);
 }
+.job-quality-icon {
+  font-size: 16px; flex-shrink: 0;
+  cursor: default;
+}
 .empty-col {
   border: 1px dashed var(--border); border-radius: var(--r2);
   padding: 28px 20px; text-align: center;
@@ -581,7 +585,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 <nav id="app-nav">
   <div class="nav-logo" onclick="navigate('/')">
     <div class="nav-logo-icon">⚡</div>
-    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.2</span></div>
+    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.3</span></div>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-search-wrap">
@@ -759,6 +763,20 @@ async function viewDashboard() {
     return;
   }
 
+  function jobQuality(j) {
+    const n = j.scored_count || 0;
+    if (!n) return { icon: '⏳', label: 'Pending', tip: 'No AI reviews yet' };
+    const lowPct  = j.score_low_count  / n;
+    const highPct = j.score_high_count / n;
+    if (lowPct > 0.5)
+      return { icon: '🔴', label: 'Not good', tip: `${j.score_low_count}/${n} candidates scored below 50%` };
+    if (highPct > 0.7)
+      return { icon: '🟢', label: 'Very good', tip: `${j.score_high_count}/${n} candidates scored 70%+` };
+    if (lowPct >= 0.25 && highPct >= 0.25)
+      return { icon: '⚡', label: 'Mixed', tip: `Spread pool: ${j.score_high_count} strong, ${j.score_low_count} weak out of ${n}` };
+    return { icon: '🟡', label: 'Neutral', tip: `${n} candidate${n !== 1 ? 's' : ''} reviewed — no strong signal yet` };
+  }
+
   const jobCards = jobs.map(j => {
     const statusPills = [
       j.count_new      ? `<span class="badge badge-new">${j.count_new} new</span>` : '',
@@ -766,9 +784,13 @@ async function viewDashboard() {
       j.count_approved ? `<span class="badge badge-approved">${j.count_approved} approved</span>` : '',
       j.count_rejected ? `<span class="badge badge-rejected">${j.count_rejected} rejected</span>` : '',
     ].filter(Boolean).join('');
+    const q = jobQuality(j);
     return `
     <div class="job-card" onclick="navigate('/jobs/${j.id}')">
-      <div class="job-card-title">${escHtml(j.title)}</div>
+      <div style="display:flex;align-items:center;gap:7px">
+        <div class="job-card-title">${escHtml(j.title)}</div>
+        <span class="job-quality-icon" aria-label="${escHtml(q.label)}">${q.icon}</span>
+      </div>
       <div class="job-card-footer">
         <span style="font-size:11px;color:var(--t3)">${fmtDate(j.created_at)}</span>
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end">

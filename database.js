@@ -43,7 +43,7 @@ function initSchema() {
       cv_filename TEXT,
       cv_original_name TEXT,
       cv_text TEXT,
-      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'reviewing', 'shortlisted', 'rejected')),
+      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new', 'reviewing', 'approved', 'rejected')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -67,6 +67,18 @@ function initSchema() {
       recommendation TEXT CHECK(recommendation IN ('hire', 'reject', 'hold', NULL)),
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS warning_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrate existing DBs: add new columns if missing
@@ -75,8 +87,21 @@ function initSchema() {
   if (!cols.includes('qualifications'))    db.exec(`ALTER TABLE jobs ADD COLUMN qualifications TEXT`);
   if (!cols.includes('jd_filename'))       db.exec(`ALTER TABLE jobs ADD COLUMN jd_filename TEXT`);
   if (!cols.includes('jd_original_name'))  db.exec(`ALTER TABLE jobs ADD COLUMN jd_original_name TEXT`);
+  // Rename shortlisted → approved for existing rows
+  db.exec(`UPDATE candidates SET status = 'approved' WHERE status = 'shortlisted'`);
   const reviewCols = db.prepare(`PRAGMA table_info(ai_reviews)`).all().map(r => r.name);
   if (!reviewCols.includes('work_experience')) db.exec(`ALTER TABLE ai_reviews ADD COLUMN work_experience TEXT`);
+  if (!reviewCols.includes('warnings')) db.exec(`ALTER TABLE ai_reviews ADD COLUMN warnings TEXT`);
+
+  // Seed config from env on first run (only if keys don't exist yet)
+  const defaults = {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
+    REVIEW_MODEL: 'claude-opus-4-6',
+    EXTRACTION_MODEL: 'claude-haiku-4-5-20251001',
+  };
+  const insert = db.prepare(`INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)`);
+  for (const [k, v] of Object.entries(defaults)) insert.run(k, v);
 }
 
 
@@ -159,13 +184,17 @@ function deleteCandidate(id) {
   return getDb().prepare('DELETE FROM candidates WHERE id = ?').run(id).changes > 0;
 }
 
+function deleteAllCandidates() {
+  return getDb().prepare('DELETE FROM candidates').run().changes;
+}
+
 // --- AI Reviews ---
 
 function saveReview(candidateId, reviewData) {
-  const { match_score, strengths, gaps, red_flags, summary, work_experience } = reviewData;
+  const { match_score, strengths, gaps, red_flags, summary, work_experience, warnings } = reviewData;
   const result = getDb().prepare(`
-    INSERT INTO ai_reviews (candidate_id, match_score, strengths, gaps, red_flags, summary, work_experience)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ai_reviews (candidate_id, match_score, strengths, gaps, red_flags, summary, work_experience, warnings)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     candidateId,
     match_score,
@@ -173,7 +202,8 @@ function saveReview(candidateId, reviewData) {
     JSON.stringify(gaps || []),
     JSON.stringify(red_flags || []),
     summary || null,
-    JSON.stringify(work_experience || [])
+    JSON.stringify(work_experience || []),
+    JSON.stringify(warnings || [])
   );
   return getReview(result.lastInsertRowid);
 }
@@ -195,6 +225,7 @@ function parseReview(row) {
     gaps: tryParse(row.gaps, []),
     red_flags: tryParse(row.red_flags, []),
     work_experience: tryParse(row.work_experience, []),
+    warnings: tryParse(row.warnings, []),
   };
 }
 
@@ -229,15 +260,54 @@ function listFeedback(candidateId) {
   return getDb().prepare('SELECT * FROM feedback WHERE candidate_id = ? ORDER BY created_at DESC').all(candidateId);
 }
 
+// --- Warning Rules ---
+
+function listWarningRules() {
+  return getDb().prepare(`SELECT * FROM warning_rules ORDER BY created_at ASC`).all();
+}
+
+function createWarningRule(text) {
+  const result = getDb().prepare(`INSERT INTO warning_rules (text) VALUES (?)`).run(text);
+  return getDb().prepare(`SELECT * FROM warning_rules WHERE id = ?`).get(result.lastInsertRowid);
+}
+
+function updateWarningRule(id, updates) {
+  const allowed = ['text', 'enabled'];
+  const fields = Object.keys(updates).filter(k => allowed.includes(k));
+  if (!fields.length) return getDb().prepare(`SELECT * FROM warning_rules WHERE id = ?`).get(id);
+  const set = fields.map(f => `${f} = ?`).join(', ');
+  getDb().prepare(`UPDATE warning_rules SET ${set} WHERE id = ?`).run(...fields.map(f => updates[f]), id);
+  return getDb().prepare(`SELECT * FROM warning_rules WHERE id = ?`).get(id);
+}
+
+function deleteWarningRule(id) {
+  return getDb().prepare(`DELETE FROM warning_rules WHERE id = ?`).run(id).changes > 0;
+}
+
 function tryParse(val, fallback) {
   try { return JSON.parse(val); } catch { return fallback; }
+}
+
+// --- Config ---
+
+function getConfig() {
+  const rows = getDb().prepare(`SELECT key, value FROM config`).all();
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+function setConfig(updates) {
+  const stmt = getDb().prepare(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`);
+  for (const [k, v] of Object.entries(updates)) stmt.run(k, v);
+  return getConfig();
 }
 
 module.exports = {
   getDb,
   listJobs, getJob, createJob, updateJob, deleteJob,
-  listCandidates, getCandidate, createCandidate, updateCandidateStatus, deleteCandidate,
+  listCandidates, getCandidate, createCandidate, updateCandidateStatus, deleteCandidate, deleteAllCandidates,
   saveReview, getReview, getLatestReview,
   searchCandidates,
   addFeedback, listFeedback,
+  getConfig, setConfig,
+  listWarningRules, createWarningRule, updateWarningRule, deleteWarningRule,
 };

@@ -4,11 +4,23 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
+const db = require('./database');
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || 'dummy',
-  baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
-});
+function getClient() {
+  const cfg = db.getConfig();
+  return new Anthropic({
+    apiKey: cfg.ANTHROPIC_API_KEY || 'dummy',
+    baseURL: cfg.ANTHROPIC_BASE_URL || undefined,
+  });
+}
+
+function getModels() {
+  const cfg = db.getConfig();
+  return {
+    review: cfg.REVIEW_MODEL || 'claude-opus-4-6',
+    extraction: cfg.EXTRACTION_MODEL || 'claude-haiku-4-5-20251001',
+  };
+}
 
 async function extractTextFromFile(filePath, originalName) {
   const ext = path.extname(originalName).toLowerCase();
@@ -38,8 +50,12 @@ async function extractTextFromFile(filePath, originalName) {
   throw new Error(`Unsupported file type: ${ext}. Only PDF and DOCX are supported.`);
 }
 
-async function reviewCv(cvText, job) {
+async function reviewCv(cvText, job, warningRules = []) {
   const truncated = cvText.length > 8000 ? cvText.slice(0, 8000) + '\n\n[...truncated for review...]' : cvText;
+
+  const rulesSection = warningRules.length
+    ? `\nWARNING RULES — check each rule and flag any violations in the "warnings" array:\n${warningRules.map((r, i) => `${i + 1}. ${r.text}`).join('\n')}`
+    : '';
 
   const prompt = `You are an expert technical recruiter. Review this CV against the job requirements and provide a structured assessment.
 
@@ -53,7 +69,7 @@ ${job.responsibilities || 'Not provided'}
 
 QUALIFICATIONS:
 ${job.qualifications || 'Not provided'}
-
+${rulesSection}
 CV TEXT:
 ${truncated}
 
@@ -63,6 +79,7 @@ Respond with ONLY a JSON object in this exact format (no markdown, no explanatio
   "strengths": [<string>, ...],
   "gaps": [<string>, ...],
   "red_flags": [<string>, ...],
+  "warnings": [<string>, ...],
   "summary": "<2-3 sentence overall assessment>",
   "work_experience": [
     { "title": "<job title>", "company": "<company name>", "duration": "<e.g. Jan 2020 – Mar 2022>", "summary": "<1-2 sentence description of role and key achievements>" },
@@ -75,12 +92,13 @@ Guidelines:
 - strengths: 3-5 specific positives relevant to the job
 - gaps: 2-4 missing skills or experience areas (empty array if none)
 - red_flags: 0-3 concerns (employment gaps, mismatches, etc.) — empty array if none
+- warnings: one entry per violated warning rule, describing the violation — empty array if no rules provided or none violated
 - summary: concise recruiter-style summary
 - work_experience: list all roles in reverse chronological order (most recent first), empty array if none found`;
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-opus-4-6',
+    const message = await getClient().messages.create({
+      model: getModels().review,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -124,6 +142,7 @@ function parseClaudeResponse(raw) {
     strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 8).map(String) : [],
     gaps: Array.isArray(parsed.gaps) ? parsed.gaps.slice(0, 8).map(String) : [],
     red_flags: Array.isArray(parsed.red_flags) ? parsed.red_flags.slice(0, 5).map(String) : [],
+    warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20).map(String) : [],
     summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 1000) : '',
     work_experience,
   };
@@ -153,8 +172,8 @@ Guidelines:
 - If a field cannot be determined, use an empty string ""`;
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const message = await getClient().messages.create({
+      model: getModels().extraction,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -187,8 +206,8 @@ async function extractNameAndEmail(text, originalName) {
   const snippet = text.slice(0, 3000);
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const message = await getClient().messages.create({
+      model: getModels().extraction,
       max_tokens: 128,
       messages: [{
         role: 'user',

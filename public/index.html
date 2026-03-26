@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JobFlow — ATS</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -166,6 +167,18 @@ input, textarea, select { font-family: inherit; outline: none; }
   outline: none; transition: border-color 0.15s;
 }
 .filter-select:focus { border-color: var(--accent); }
+.rule-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.rule-item:last-child { border-bottom: none; }
+.rule-toggle { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; flex: 1; font-size: 13px; color: var(--t2); line-height: 1.5; }
+.rule-toggle input[type=checkbox] { margin-top: 3px; flex-shrink: 0; accent-color: var(--accent); }
+.rule-delete-btn {
+  background: none; border: none; cursor: pointer; color: var(--t4);
+  font-size: 12px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+}
+.rule-delete-btn:hover { color: var(--red); background: var(--red-dim); }
 
 /* ── Forms ───────────────────────────── */
 .form-group { margin-bottom: 18px; }
@@ -202,7 +215,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 }
 .badge-new { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(59,130,246,0.2); }
 .badge-reviewing { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
-.badge-shortlisted { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
+.badge-approved { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
 .badge-rejected { background: var(--red-dim); color: var(--red); border: 1px solid rgba(244,63,94,0.2); }
 .badge-hire { background: var(--green-dim); color: var(--green); border: 1px solid rgba(16,185,129,0.2); }
 .badge-hold { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
@@ -535,7 +548,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 <nav id="app-nav">
   <div class="nav-logo" onclick="navigate('/')">
     <div class="nav-logo-icon">⚡</div>
-    <div class="nav-logo-text">JobFlow</div>
+    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.0</span></div>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-search-wrap">
@@ -548,6 +561,7 @@ input, textarea, select { font-family: inherit; outline: none; }
       autocomplete="off"
     >
   </div>
+  <button class="btn btn-secondary btn-sm" onclick="navigate('/settings')" style="margin-left:8px" title="Settings">⚙</button>
 </nav>
 
 <main id="app-main">
@@ -601,6 +615,7 @@ const routes = [
   { re: /^\/jobs\/(\d+)$/, fn: m => viewJobDetail(Number(m[1])) },
   { re: /^\/candidates\/(\d+)$/, fn: m => viewCandidateDetail(Number(m[1])) },
   { re: /^\/search\?q=(.*)$/, fn: m => viewSearchResults(decodeURIComponent(m[1])) },
+  { re: /^\/settings$/, fn: viewSettings },
 ];
 function navigate(path) { window.location.hash = '#' + path; }
 function router() {
@@ -856,7 +871,7 @@ async function viewJobDetail(jobId) {
             <option value="">All statuses</option>
             <option value="new">New</option>
             <option value="reviewing">Reviewing</option>
-            <option value="shortlisted">Shortlisted</option>
+            <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
         </div>` : ''}
@@ -936,7 +951,7 @@ async function viewCandidateDetail(candidateId) {
 
   const review = candidate.ai_review;
   const feedbackList = candidate.feedback || [];
-  const statusOptions = ['new', 'reviewing', 'shortlisted', 'rejected'];
+  const statusOptions = ['new', 'reviewing', 'approved', 'rejected'];
 
   const workExp = review?.work_experience || [];
   const expContent = workExp.length
@@ -1133,6 +1148,7 @@ function renderReview(review) {
   const strengths = review.strengths || [];
   const gaps = review.gaps || [];
   const redFlags = review.red_flags || [];
+  const warnings = review.warnings || [];
 
   return `
     <div class="review-score-area">
@@ -1164,6 +1180,12 @@ function renderReview(review) {
       <div class="review-section">
         <div class="review-section-title"><span style="color:var(--red)">⚑</span> Red Flags</div>
         ${redFlags.map(r => `<div class="review-item"><div class="review-item-dot" style="background:var(--red)"></div><span>${escHtml(r)}</span></div>`).join('')}
+      </div>` : ''}
+
+    ${warnings.length ? `
+      <div class="review-section">
+        <div class="review-section-title"><span style="color:var(--amber)">⚠</span> Rule Warnings</div>
+        ${warnings.map(w => `<div class="review-item"><div class="review-item-dot" style="background:var(--amber)"></div><span>${escHtml(w)}</span></div>`).join('')}
       </div>` : ''}
 
     <div style="font-size:11px;color:var(--t3);margin-top:10px;font-family:'JetBrains Mono',monospace">
@@ -1282,6 +1304,153 @@ function showUploadModal(jobId) {
         navigate('/jobs/' + jobId);
       }
     }, ok > 1 ? 1800 : 600);
+  });
+}
+
+// ── Settings ─────────────────────────────────────────
+async function viewSettings() {
+  setMain('<div class="loading-state"><div class="spinner"></div><span>Loading settings…</span></div>');
+  let cfg, rules;
+  try {
+    [cfg, rules] = await Promise.all([api.get('/config'), api.get('/warning-rules')]);
+  } catch (e) { setMain(`<div class="empty-state"><div class="empty-title">Failed to load settings</div></div>`); return; }
+
+  setMain(`
+    <div class="page-header">
+      <div class="page-title">Settings</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+      <div>
+      <div class="card">
+        <div class="section-title">Claude / AI Configuration</div>
+        <form id="settings-form">
+          <div class="form-group">
+            <label class="form-label">API Key</label>
+            <input class="form-input" type="text" name="ANTHROPIC_API_KEY" value="${escHtml(cfg.ANTHROPIC_API_KEY)}" placeholder="Not set" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Base URL <span style="color:var(--t4);font-weight:400">(optional — for HAI proxy or custom endpoints)</span></label>
+            <input class="form-input" type="text" name="ANTHROPIC_BASE_URL" value="${escHtml(cfg.ANTHROPIC_BASE_URL)}" placeholder="https://api.anthropic.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Review Model <span style="color:var(--t4);font-weight:400">(CV review)</span></label>
+            <input class="form-input" type="text" name="REVIEW_MODEL" value="${escHtml(cfg.REVIEW_MODEL)}" placeholder="claude-opus-4-6" list="model-list">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Extraction Model <span style="color:var(--t4);font-weight:400">(JD & CV parsing)</span></label>
+            <input class="form-input" type="text" name="EXTRACTION_MODEL" value="${escHtml(cfg.EXTRACTION_MODEL)}" placeholder="claude-haiku-4-5-20251001" list="model-list">
+          </div>
+          <datalist id="model-list">
+            <option value="claude-opus-4-6">
+            <option value="claude-sonnet-4-6">
+            <option value="claude-haiku-4-5-20251001">
+            <option value="claude-opus-4-5">
+            <option value="claude-sonnet-4-5">
+            <option value="claude-haiku-4-5">
+          </datalist>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <button type="button" class="btn btn-secondary btn-sm" id="reset-config-btn">↺ Reset to .env</button>
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+          </div>
+        </form>
+      </div>
+      </div>
+      <div>
+      <div class="card">
+        <div class="section-title">Warning Rules</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:12px">Plain-text rules applied during AI review. Claude will flag any violations.</div>
+        <div id="rules-list">
+          ${rules.length ? rules.map(r => `
+            <div class="rule-item" id="rule-${r.id}">
+              <label class="rule-toggle">
+                <input type="checkbox" data-id="${r.id}" ${r.enabled ? 'checked' : ''}>
+                <span>${escHtml(r.text)}</span>
+              </label>
+              <button class="rule-delete-btn" data-id="${r.id}" title="Delete">✕</button>
+            </div>`).join('') : `<div style="color:var(--t3);font-size:13px;margin-bottom:12px">No rules yet.</div>`}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input class="form-input" type="text" id="new-rule-input" placeholder="e.g. Flag candidates who changed jobs more than 3 times in 2 years" style="flex:1">
+          <button class="btn btn-primary btn-sm" id="add-rule-btn">Add Rule</button>
+        </div>
+      </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('settings-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {};
+    for (const [k, v] of fd.entries()) if (v.trim()) body[k] = v.trim();
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api.put('/config', body);
+      toast('Settings saved', 'success');
+      btn.textContent = 'Save Settings';
+    } catch (err) {
+      toast(err.message, 'error');
+      btn.textContent = 'Save Settings';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('reset-config-btn').addEventListener('click', async () => {
+    if (!confirm('Reset all Claude settings to values from .env?')) return;
+    try {
+      const defaults = await api.post('/config/reset', {});
+      const form = document.getElementById('settings-form');
+      form.ANTHROPIC_API_KEY.value = defaults.ANTHROPIC_API_KEY;
+      form.ANTHROPIC_BASE_URL.value = defaults.ANTHROPIC_BASE_URL;
+      form.REVIEW_MODEL.value = defaults.REVIEW_MODEL;
+      form.EXTRACTION_MODEL.value = defaults.EXTRACTION_MODEL;
+      toast('Reset to .env values', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Warning rules — add
+  document.getElementById('add-rule-btn').addEventListener('click', async () => {
+    const input = document.getElementById('new-rule-input');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      const rule = await api.post('/warning-rules', { text });
+      const list = document.getElementById('rules-list');
+      const empty = list.querySelector('div[style]');
+      if (empty) empty.remove();
+      const el = document.createElement('div');
+      el.className = 'rule-item'; el.id = `rule-${rule.id}`;
+      el.innerHTML = `<label class="rule-toggle"><input type="checkbox" data-id="${rule.id}" checked><span>${escHtml(rule.text)}</span></label><button class="rule-delete-btn" data-id="${rule.id}" title="Delete">✕</button>`;
+      list.appendChild(el);
+      input.value = '';
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  document.getElementById('new-rule-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('add-rule-btn').click();
+  });
+
+  // Warning rules — toggle enabled
+  document.getElementById('rules-list').addEventListener('change', async e => {
+    const cb = e.target.closest('input[type=checkbox]');
+    if (!cb) return;
+    try { await api.patch(`/warning-rules/${cb.dataset.id}`, { enabled: cb.checked ? 1 : 0 }); }
+    catch (err) { toast(err.message, 'error'); cb.checked = !cb.checked; }
+  });
+
+  // Warning rules — delete
+  document.getElementById('rules-list').addEventListener('click', async e => {
+    const btn = e.target.closest('.rule-delete-btn');
+    if (!btn) return;
+    try {
+      await api.del(`/warning-rules/${btn.dataset.id}`);
+      document.getElementById(`rule-${btn.dataset.id}`)?.remove();
+      if (!document.querySelectorAll('.rule-item').length) {
+        document.getElementById('rules-list').innerHTML = `<div style="color:var(--t3);font-size:13px;margin-bottom:12px">No rules yet.</div>`;
+      }
+    } catch (err) { toast(err.message, 'error'); }
   });
 }
 

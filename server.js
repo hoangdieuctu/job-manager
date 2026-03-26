@@ -10,7 +10,6 @@ const fs = require('fs');
 
 const db = require('./database');
 const { extractTextFromFile, extractNameAndEmail, reviewCv, extractJobFromText } = require('./ai-review');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -40,6 +39,79 @@ const upload = multer({
     if (allowed.includes(ext)) cb(null, true);
     else cb(new Error('Only PDF and DOCX files are allowed.'));
   },
+});
+
+// --- Config Routes ---
+
+app.get('/api/config', (req, res) => {
+  const cfg = db.getConfig();
+  // Fall back to .env values for any key not yet set in DB
+  const apiKey = cfg.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+  const baseUrl = cfg.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL || '';
+  const reviewModel = cfg.REVIEW_MODEL || process.env.REVIEW_MODEL || 'claude-opus-4-6';
+  const extractionModel = cfg.EXTRACTION_MODEL || process.env.EXTRACTION_MODEL || 'claude-haiku-4-5-20251001';
+  res.json({
+    ANTHROPIC_API_KEY: apiKey,
+    ANTHROPIC_BASE_URL: baseUrl,
+    REVIEW_MODEL: reviewModel,
+    EXTRACTION_MODEL: extractionModel,
+  });
+});
+
+app.post('/api/config/reset', (req, res) => {
+  const defaults = {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL || '',
+    REVIEW_MODEL: process.env.REVIEW_MODEL || 'claude-opus-4-6',
+    EXTRACTION_MODEL: process.env.EXTRACTION_MODEL || 'claude-haiku-4-5-20251001',
+  };
+  db.setConfig(defaults);
+  res.json({
+    ANTHROPIC_API_KEY: defaults.ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL: defaults.ANTHROPIC_BASE_URL,
+    REVIEW_MODEL: defaults.REVIEW_MODEL,
+    EXTRACTION_MODEL: defaults.EXTRACTION_MODEL,
+  });
+});
+
+app.put('/api/config', (req, res) => {
+  const allowed = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'REVIEW_MODEL', 'EXTRACTION_MODEL'];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  db.setConfig(updates);
+  const cfg = db.getConfig();
+  res.json({
+    ANTHROPIC_API_KEY: cfg.ANTHROPIC_API_KEY || '',
+    ANTHROPIC_BASE_URL: cfg.ANTHROPIC_BASE_URL || '',
+    REVIEW_MODEL: cfg.REVIEW_MODEL || '',
+    EXTRACTION_MODEL: cfg.EXTRACTION_MODEL || '',
+  });
+});
+
+// --- Warning Rules Routes ---
+
+app.get('/api/warning-rules', (req, res) => {
+  res.json(db.listWarningRules());
+});
+
+app.post('/api/warning-rules', (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+  res.status(201).json(db.createWarningRule(text.trim()));
+});
+
+app.patch('/api/warning-rules/:id', (req, res) => {
+  const rule = db.updateWarningRule(Number(req.params.id), req.body);
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+  res.json(rule);
+});
+
+app.delete('/api/warning-rules/:id', (req, res) => {
+  const deleted = db.deleteWarningRule(Number(req.params.id));
+  if (!deleted) return res.status(404).json({ error: 'Rule not found' });
+  res.json({ success: true });
 });
 
 // --- Job Routes ---
@@ -123,9 +195,10 @@ app.post('/api/jobs/:id/review-all', async (req, res) => {
   if (!candidates.length) return res.json({ started: 0 });
 
   // Fire and forget — run in background, don't await
+  const rules = db.listWarningRules().filter(r => r.enabled);
   Promise.all(candidates.map(async c => {
     try {
-      const reviewData = await reviewCv(c.cv_text, job);
+      const reviewData = await reviewCv(c.cv_text, job, rules);
       db.saveReview(c.id, reviewData);
       db.updateCandidateStatus(c.id, 'reviewing');
     } catch (err) {
@@ -227,7 +300,7 @@ app.get('/api/candidates/:id', (req, res) => {
 
 app.patch('/api/candidates/:id/status', (req, res) => {
   const { status } = req.body;
-  const allowed = ['new', 'reviewing', 'shortlisted', 'rejected'];
+  const allowed = ['new', 'reviewing', 'approved', 'rejected'];
   if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const candidate = db.getCandidate(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
@@ -243,7 +316,8 @@ app.post('/api/candidates/:id/ai-review', async (req, res) => {
   if (!job) return res.status(404).json({ error: 'Associated job not found' });
 
   try {
-    const reviewData = await reviewCv(candidate.cv_text, job);
+    const rules = db.listWarningRules().filter(r => r.enabled);
+    const reviewData = await reviewCv(candidate.cv_text, job, rules);
     const review = db.saveReview(candidate.id, reviewData);
     db.updateCandidateStatus(candidate.id, 'reviewing');
     res.json(review);
@@ -287,6 +361,15 @@ app.delete('/api/candidates/:id', (req, res) => {
   }
 
   db.deleteCandidate(Number(req.params.id));
+  res.json({ success: true });
+});
+
+app.delete('/api/candidates', (req, res) => {
+  const files = fs.readdirSync(UPLOADS_DIR);
+  files.forEach(f => {
+    try { fs.unlinkSync(path.join(UPLOADS_DIR, f)); } catch {}
+  });
+  db.deleteAllCandidates();
   res.json({ success: true });
 });
 

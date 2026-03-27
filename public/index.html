@@ -585,7 +585,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 <nav id="app-nav">
   <div class="nav-logo" onclick="navigate('/')">
     <div class="nav-logo-icon">⚡</div>
-    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.3</span></div>
+    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.4</span></div>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-search-wrap">
@@ -1075,6 +1075,31 @@ async function viewJobDetail(jobId) {
       if (scoreEl) scoreEl.innerHTML = `<div class="spinner" style="width:13px;height:13px;border-width:2px"></div>`;
     });
   }
+
+  // Show spinner and poll for individually-triggered reviews
+  candidates.filter(c => c.ai_reviewing).forEach(c => {
+    const scoreEl = document.querySelector(`#cand-row-${c.id} .cand-score-area`);
+    if (scoreEl) scoreEl.innerHTML = `<div class="spinner" style="width:13px;height:13px;border-width:2px"></div>`;
+    const poll = setInterval(async () => {
+      try {
+        const updated = await api.get(`/candidates/${c.id}`);
+        if (!updated.ai_reviewing) {
+          clearInterval(poll);
+          const row = document.querySelector(`#cand-row-${c.id}`);
+          if (!row) return;
+          const sc = updated.ai_review?.match_score;
+          const el = row.querySelector('.cand-score-area');
+          if (el) el.innerHTML = sc != null
+            ? `<span class="cand-score-inline" style="color:${scoreColor(sc)};background:${scoreColor(sc).replace(')', ',0.1)').replace('var(', 'rgba(')}">${sc}%</span>`
+            : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
+          row.dataset.score = sc != null ? sc : 'none';
+          row.dataset.status = updated.status;
+          const badge = row.querySelector('.badge');
+          if (badge) { badge.className = `badge badge-${updated.status}`; badge.textContent = updated.status; }
+        }
+      } catch { clearInterval(poll); }
+    }, 2000);
+  });
 }
 
 // ── Candidate Detail ─────────────────────────────────
@@ -1103,9 +1128,16 @@ async function viewCandidateDetail(candidateId) {
         </div>`).join('')}</div>`
     : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience data — run AI Review to extract it.</div>`;
 
-  const isBeingReviewed = Object.values(_reviewPolls).some(p => p.pending.has(candidateId));
+  const isBeingReviewed = candidate.ai_reviewing || Object.values(_reviewPolls).some(p => p.pending.has(candidateId));
 
   const reviewContent = review && !isBeingReviewed ? renderReview(review)
+    : isBeingReviewed ? `<div style="padding:12px 0">
+      <div class="skeleton" style="height:80px;border-radius:12px;margin-bottom:16px"></div>
+      <div class="skeleton" style="height:13px;width:55%;margin-bottom:10px"></div>
+      <div class="skeleton" style="height:13px;width:80%;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:13px;width:70%;margin-bottom:8px"></div>
+      <div class="skeleton" style="height:13px;width:60%"></div>
+    </div>`
     : `<div class="empty-state" style="padding:32px">
         <div class="empty-icon">🤖</div>
         <div class="empty-title">No review yet</div>
@@ -1143,8 +1175,11 @@ async function viewCandidateDetail(candidateId) {
     </div>
 
     <div class="card" style="margin-bottom:20px">
-      <div class="section-title">💼 Work Experience</div>
-      <div id="exp-panel">${expContent}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="section-title" style="margin:0">💼 Work Experience</div>
+        <button id="exp-toggle-btn" class="btn btn-ghost btn-sm" style="color:var(--accent2)">Show ↓</button>
+      </div>
+      <div id="exp-panel" style="display:none">${expContent}</div>
     </div>
 
     <div class="cand-detail-grid">
@@ -1152,9 +1187,12 @@ async function viewCandidateDetail(candidateId) {
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
             <div class="section-title" style="margin:0">AI Review</div>
-            <button class="btn btn-primary btn-sm" id="run-review-btn" ${isBeingReviewed ? 'disabled' : ''}>
-              ${isBeingReviewed ? '<div class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></div> Analysing…' : review ? '↺ Re-run' : '▶ Run Review'}
-            </button>
+              <div style="display:flex;gap:8px;align-items:center" id="review-actions">
+              ${review ? `<a href="/api/candidates/${candidate.id}/export-review" class="btn btn-secondary btn-sm" target="_blank">↓ Export</a>` : ''}
+              <button class="btn btn-primary btn-sm" id="run-review-btn" ${isBeingReviewed ? 'disabled' : ''}>
+                ${isBeingReviewed ? '<div class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></div> Analysing…' : review ? '↺ Re-run' : '▶ Run Review'}
+              </button>
+              </div>
           </div>
           <div id="review-panel">${reviewContent}</div>
         </div>
@@ -1194,9 +1232,67 @@ async function viewCandidateDetail(candidateId) {
     catch (err) { toast(err.message, 'error'); }
   });
 
+  // Work Experience toggle
+  document.getElementById('exp-toggle-btn').addEventListener('click', () => {
+    const panel = document.getElementById('exp-panel');
+    const btn = document.getElementById('exp-toggle-btn');
+    const open = panel.style.display === 'none';
+    panel.style.display = open ? '' : 'none';
+    btn.textContent = open ? 'Hide ↑' : 'Show ↓';
+  });
+
   // AI Review
+  function startReviewPolling() {
+    const btn = document.getElementById('run-review-btn');
+    const panel = document.getElementById('review-panel');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spinner" style="width:13px;height:13px;border-width:2px"></div> Analysing…'; }
+    const poll = setInterval(async () => {
+      try {
+        const c = await api.get(`/candidates/${candidateId}`);
+        if (!c.ai_reviewing) {
+          clearInterval(poll);
+          if (c.ai_review) {
+            panel.innerHTML = renderReview(c.ai_review);
+            const newExp = c.ai_review.work_experience || [];
+            const expPanel = document.getElementById('exp-panel');
+            if (expPanel) expPanel.innerHTML = newExp.length
+              ? `<div class="exp-timeline">${newExp.map(e => `
+                  <div class="exp-item">
+                    <div class="exp-header">
+                      <div>
+                        <div class="exp-title">${escHtml(e.title)}</div>
+                        <div class="exp-company">${escHtml(e.company)}</div>
+                      </div>
+                      ${e.duration ? `<div class="exp-duration">${escHtml(e.duration)}</div>` : ''}
+                    </div>
+                    ${e.summary ? `<div class="exp-summary">${escHtml(e.summary)}</div>` : ''}
+                  </div>`).join('')}</div>`
+              : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience found in CV.</div>`;
+            if (btn) { btn.disabled = false; btn.textContent = '↺ Re-run'; }
+            const actions = document.getElementById('review-actions');
+            if (actions && !actions.querySelector('a')) {
+              const exportLink = document.createElement('a');
+              exportLink.href = `/api/candidates/${candidateId}/export-review`;
+              exportLink.className = 'btn btn-secondary btn-sm';
+              exportLink.target = '_blank';
+              exportLink.textContent = '↓ Export';
+              actions.insertBefore(exportLink, actions.firstChild);
+            }
+            toast('AI review complete', 'success');
+          } else {
+            panel.innerHTML = `<div style="padding:14px;color:var(--red);font-size:13px;background:var(--red-dim);border-radius:var(--r);border:1px solid rgba(244,63,94,0.2)">⚠ Review failed — please retry.</div>`;
+            if (btn) { btn.disabled = false; btn.textContent = '↺ Retry'; }
+            toast('AI review failed', 'error');
+          }
+        }
+      } catch { clearInterval(poll); if (btn) { btn.disabled = false; btn.textContent = '↺ Retry'; } }
+    }, 2000);
+  }
+
+  if (isBeingReviewed) startReviewPolling();
+
   document.getElementById('run-review-btn').addEventListener('click', async () => {
-    if (Object.values(_reviewPolls).some(p => p.pending.has(candidateId))) return;
+    if (document.getElementById('run-review-btn').disabled) return;
     const btn = document.getElementById('run-review-btn');
     const panel = document.getElementById('review-panel');
     btn.disabled = true;
@@ -1209,31 +1305,15 @@ async function viewCandidateDetail(candidateId) {
       <div class="skeleton" style="height:13px;width:60%"></div>
     </div>`;
     try {
-      const rev = await api.post(`/candidates/${candidateId}/ai-review`, {});
-      panel.innerHTML = renderReview(rev);
-      const newExp = rev.work_experience || [];
-      const expPanel = document.getElementById('exp-panel');
-      if (expPanel) expPanel.innerHTML = newExp.length
-        ? `<div class="exp-timeline">${newExp.map(e => `
-            <div class="exp-item">
-              <div class="exp-header">
-                <div>
-                  <div class="exp-title">${escHtml(e.title)}</div>
-                  <div class="exp-company">${escHtml(e.company)}</div>
-                </div>
-                ${e.duration ? `<div class="exp-duration">${escHtml(e.duration)}</div>` : ''}
-              </div>
-              ${e.summary ? `<div class="exp-summary">${escHtml(e.summary)}</div>` : ''}
-            </div>`).join('')}</div>`
-        : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience found in CV.</div>`;
-      btn.textContent = '↺ Re-run';
-      toast('AI review complete', 'success');
+      await api.post(`/candidates/${candidateId}/ai-review`, {});
+      startReviewPolling();
     } catch (err) {
       panel.innerHTML = `<div style="padding:14px;color:var(--red);font-size:13px;background:var(--red-dim);border-radius:var(--r);border:1px solid rgba(244,63,94,0.2)">
         ⚠ ${escHtml(err.message)}</div>`;
       btn.textContent = '↺ Retry';
+      btn.disabled = false;
       toast(err.message, 'error');
-    } finally { btn.disabled = false; }
+    }
   });
 
   // Feedback

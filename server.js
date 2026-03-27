@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const db = require('./database');
 const { extractTextFromFile, extractNameAndEmail, reviewCv, extractJobFromText } = require('./ai-review');
+const PDFDocument = require('pdfkit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -240,8 +241,9 @@ app.post('/api/jobs/:id/export-cvs', (req, res) => {
   const usedNames = {};
   withFiles.forEach(c => {
     const filePath = path.join(UPLOADS_DIR, path.basename(c.cv_filename));
-    const ext = path.extname(c.cv_original_name || c.cv_filename);
-    const base = c.name.replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '_') || 'candidate';
+    const original = c.cv_original_name || path.basename(c.cv_filename);
+    const ext = path.extname(original);
+    const base = path.basename(original, ext);
     usedNames[base] = (usedNames[base] || 0) + 1;
     const count = usedNames[base];
     const entryName = count > 1 ? `${base}_${count}${ext}` : `${base}${ext}`;
@@ -312,18 +314,23 @@ app.post('/api/candidates/:id/ai-review', async (req, res) => {
   const candidate = db.getCandidate(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
   if (!candidate.cv_text) return res.status(400).json({ error: 'No CV text available for review. The CV may need to be re-uploaded.' });
+  if (candidate.ai_reviewing) return res.status(409).json({ error: 'Review already in progress' });
 
   const job = db.getJob(candidate.job_id);
   if (!job) return res.status(404).json({ error: 'Associated job not found' });
 
+  db.setReviewing(candidate.id, true);
+  res.json({ started: true });
+
   try {
     const rules = db.listWarningRules().filter(r => r.enabled);
     const reviewData = await reviewCv(candidate.cv_text, job, rules);
-    const review = db.saveReview(candidate.id, reviewData);
+    db.saveReview(candidate.id, reviewData);
     db.updateCandidateStatus(candidate.id, 'reviewing');
-    res.json(review);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`AI review failed for candidate ${candidate.id}:`, err.message);
+  } finally {
+    db.setReviewing(candidate.id, false);
   }
 });
 
@@ -372,6 +379,132 @@ app.delete('/api/candidates', (req, res) => {
   });
   db.deleteAllCandidates();
   res.json({ success: true });
+});
+
+app.get('/api/candidates/:id/export-review', (req, res) => {
+  const candidate = db.getCandidate(Number(req.params.id));
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+
+  const job = db.getJob(candidate.job_id);
+  const review = candidate.ai_review;
+
+  const doc = new PDFDocument({ margin: 50, size: 'A4', autoFirstPage: true });
+  const safeName = (candidate.name || 'candidate').replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}_review.pdf"`);
+  doc.pipe(res);
+
+  const C = { accent: '#6366f1', green: '#059669', red: '#e11d48', amber: '#d97706', muted: '#64748b', light: '#94a3b8', dark: '#1e293b', bg: '#f8fafc', border: '#e2e8f0', summarybg: '#f1f5f9' };
+  const L = 50, R = 545, W = 495;
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  doc.font('Helvetica-Bold').fontSize(22).fillColor(C.dark)
+    .text(candidate.name || 'Candidate', L, 50, { width: W });
+  const metaParts = [
+    candidate.email,
+    job?.title,
+    candidate.created_at ? `Applied ${new Date(candidate.created_at + ' UTC').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : '',
+  ].filter(Boolean).join('   ·   ');
+  doc.font('Helvetica').fontSize(9).fillColor(C.light).text(metaParts, L, doc.y + 4, { width: W });
+  doc.moveDown(0.6);
+  doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor(C.border).lineWidth(0.75).stroke();
+  doc.moveDown(0.8);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  // Section group title
+  function sectionTitle(label, color) {
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(color)
+      .text(label.toUpperCase(), L, doc.y, { characterSpacing: 0.8 });
+    doc.moveDown(0.3);
+  }
+
+  // Item row with colored dot + text + bottom divider
+  function reviewItem(text, color, isLast) {
+    const rowY = doc.y;
+    doc.circle(L + 3, rowY + 7, 3).fill(color);
+    doc.font('Helvetica').fontSize(12).fillColor(C.dark)
+      .text(text, L + 14, rowY, { width: W - 14, lineGap: 2, align: 'justify' });
+    if (!isLast) doc.moveDown(0.35);
+  }
+
+  // ── AI Review ─────────────────────────────────────────────────────────────
+  if (review) {
+    const sc = review.match_score ?? 0;
+    const scoreColor = sc >= 75 ? C.green : sc < 50 ? C.red : C.amber;
+    const scoreSub = sc >= 75 ? 'Strong match for this role' : sc >= 50 ? 'Moderate match — worth reviewing' : 'Weak match — significant gaps';
+
+    // Score area: fixed-position circle on left, text block on right
+    const areaY = doc.y;
+    const circleR = 34;
+    const cx = L + circleR;
+    const cy = areaY + circleR + 4;
+
+    // Circle
+    doc.circle(cx, cy, circleR).lineWidth(3).strokeColor(scoreColor).stroke();
+    doc.circle(cx, cy, circleR - 1.5).fillOpacity(0.08).fill(scoreColor).fillOpacity(1);
+
+    // Score number — centered in circle, lineBreak:false to suppress cursor move
+    doc.font('Helvetica-Bold').fontSize(18).fillColor(scoreColor)
+      .text(`${sc}`, cx - circleR, cy - 13, { width: circleR * 2, align: 'center', lineBreak: false });
+    doc.font('Helvetica').fontSize(8).fillColor(scoreColor)
+      .text('/ 100', cx - circleR, cy + 8, { width: circleR * 2, align: 'center', lineBreak: false });
+
+    // Right-side text block — all at fixed y positions
+    const textX = L + circleR * 2 + 16;
+    const textW = W - circleR * 2 - 16;
+    doc.font('Helvetica-Bold').fontSize(13).fillColor(C.dark)
+      .text('Match Score', textX, areaY + 8, { width: textW, lineBreak: false });
+    doc.font('Helvetica').fontSize(10).fillColor(C.muted)
+      .text(scoreSub, textX, areaY + 28, { width: textW, lineBreak: false });
+    if (review.created_at) {
+      const reviewedStr = new Date(review.created_at + ' UTC').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      doc.font('Helvetica').fontSize(8).fillColor(C.light)
+        .text(`Reviewed ${reviewedStr}`, textX, areaY + 46, { width: textW, lineBreak: false });
+    }
+
+    // Advance cursor past the score area
+    doc.y = areaY + circleR * 2 + 16;
+    doc.moveDown(0.6);
+
+    // Summary box (mirrors .review-summary)
+    if (review.summary) {
+      const sumY = doc.y;
+      doc.font('Helvetica-Oblique').fontSize(10);
+      const sumH = doc.heightOfString(review.summary, { width: W - 24, lineGap: 2 }) + 20;
+      doc.rect(L, sumY, W, sumH).fillColor(C.summarybg).fill();
+      doc.rect(L, sumY, W, sumH).strokeColor(C.border).lineWidth(0.5).stroke();
+      doc.fillColor(C.muted).text(review.summary, L + 12, sumY + 10, { width: W - 24, lineGap: 2, align: 'justify' });
+      doc.y = sumY + sumH + 4;
+      doc.moveDown(0.4);
+    }
+
+    // Strengths
+    if (review.strengths?.length) {
+      sectionTitle('Strengths', C.green);
+      review.strengths.forEach((s, i) => reviewItem(s, C.green, i === review.strengths.length - 1));
+    }
+
+    // Gaps
+    if (review.gaps?.length) {
+      sectionTitle('Gaps', C.amber);
+      review.gaps.forEach((g, i) => reviewItem(g, C.amber, i === review.gaps.length - 1));
+    }
+
+    // Red Flags
+    if (review.red_flags?.length) {
+      sectionTitle('Red Flags', C.red);
+      review.red_flags.forEach((r, i) => reviewItem(r, C.red, i === review.red_flags.length - 1));
+    }
+
+    // Rule Warnings
+    if (review.warnings?.length) {
+      sectionTitle('Rule Warnings', C.amber);
+      review.warnings.forEach((w, i) => reviewItem(w, C.amber, i === review.warnings.length - 1));
+    }
+  }
+
+  doc.end();
 });
 
 // Multer error handler

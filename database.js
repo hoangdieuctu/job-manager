@@ -142,13 +142,13 @@ const MIGRATIONS = [
     },
   },
   // ── Add new migrations here ──────────────────────────────────────────────
-  // {
-  //   id: 4,
-  //   description: 'Example: add notes column to jobs',
-  //   up(db) {
-  //     db.exec(`ALTER TABLE jobs ADD COLUMN notes TEXT`);
-  //   },
-  // },
+  {
+    id: 4,
+    description: 'Add ai_reviewing flag to candidates',
+    up(db) {
+      db.exec(`ALTER TABLE candidates ADD COLUMN ai_reviewing INTEGER NOT NULL DEFAULT 0`);
+    },
+  },
 ];
 
 function runMigrations() {
@@ -204,7 +204,13 @@ function listJobs() {
       SUM(CASE WHEN r.match_score >= 70 THEN 1 ELSE 0 END) as score_high_count
     FROM jobs j
     LEFT JOIN candidates c ON c.job_id = j.id
-    LEFT JOIN ai_reviews r ON r.candidate_id = c.id
+    LEFT JOIN (
+      SELECT candidate_id, id, match_score
+      FROM ai_reviews
+      WHERE id IN (
+        SELECT MAX(id) FROM ai_reviews GROUP BY candidate_id
+      )
+    ) r ON r.candidate_id = c.id
     GROUP BY j.id
     ORDER BY j.created_at DESC
   `).all();
@@ -271,6 +277,10 @@ function createCandidate(data) {
 function updateCandidateStatus(id, status) {
   getDb().prepare(`UPDATE candidates SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(status, id);
   return getCandidate(id);
+}
+
+function setReviewing(id, flag) {
+  getDb().prepare(`UPDATE candidates SET ai_reviewing = ?, updated_at = datetime('now') WHERE id = ?`).run(flag ? 1 : 0, id);
 }
 
 function deleteCandidate(id) {
@@ -397,7 +407,7 @@ function setConfig(updates) {
 module.exports = {
   getDb,
   listJobs, getJob, createJob, updateJob, deleteJob,
-  listCandidates, getCandidate, createCandidate, updateCandidateStatus, deleteCandidate, deleteAllCandidates,
+  listCandidates, getCandidate, createCandidate, updateCandidateStatus, setReviewing, deleteCandidate, deleteAllCandidates,
   saveReview, getReview, getLatestReview,
   searchCandidates,
   addFeedback, listFeedback,

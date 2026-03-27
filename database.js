@@ -149,6 +149,26 @@ const MIGRATIONS = [
       db.exec(`ALTER TABLE candidates ADD COLUMN ai_reviewing INTEGER NOT NULL DEFAULT 0`);
     },
   },
+  {
+    id: 5,
+    description: 'Add dismissed column to ai_reviews',
+    up(db) {
+      db.exec(`ALTER TABLE ai_reviews ADD COLUMN dismissed TEXT NOT NULL DEFAULT '{}'`);
+    },
+  },
+  {
+    id: 6,
+    description: 'Add bonus_rules table and bonuses column to ai_reviews',
+    up(db) {
+      db.exec(`CREATE TABLE IF NOT EXISTS bonus_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+      db.exec(`ALTER TABLE ai_reviews ADD COLUMN bonuses TEXT`);
+    },
+  },
 ];
 
 function runMigrations() {
@@ -247,14 +267,33 @@ function deleteJob(id) {
 
 function listCandidates(jobId) {
   return getDb().prepare(`
-    SELECT c.*, r.match_score, r.summary as review_summary
+    SELECT c.id, c.job_id, c.name, c.email, c.cv_filename, c.cv_original_name, c.status, c.ai_reviewing, c.created_at, c.updated_at,
+           (c.cv_text IS NOT NULL AND c.cv_text != '') as has_cv_text,
+           r.match_score, r.summary as review_summary, r.warnings, r.red_flags, r.dismissed, r.work_experience, r.bonuses
     FROM candidates c
     LEFT JOIN ai_reviews r ON r.id = (
       SELECT id FROM ai_reviews WHERE candidate_id = c.id ORDER BY created_at DESC LIMIT 1
     )
     WHERE c.job_id = ?
     ORDER BY c.created_at DESC
-  `).all(jobId);
+  `).all(jobId).map(row => {
+    const warnings = tryParse(row.warnings, []) || [];
+    const redFlags = tryParse(row.red_flags, []) || [];
+    const dismissed = tryParse(row.dismissed, {}) || {};
+    const dismissedW = dismissed.warnings || [];
+    const dismissedR = dismissed.red_flags || [];
+    const workExp = tryParse(row.work_experience, []) || [];
+    const hasReview = row.match_score != null;
+    const bonuses = tryParse(row.bonuses, []) || [];
+    const dismissedB = dismissed.bonuses || [];
+    return {
+      ...row,
+      warnings_count: warnings.filter((_, i) => !dismissedW.includes(i)).length,
+      red_flags_count: redFlags.filter((_, i) => !dismissedR.includes(i)).length,
+      bonuses_count: bonuses.filter((_, i) => !dismissedB.includes(i)).length,
+      needs_manual_review: !row.has_cv_text || (hasReview && workExp.length === 0 && !dismissed.no_experience),
+    };
+  });
 }
 
 function getCandidate(id) {
@@ -294,10 +333,10 @@ function deleteAllCandidates() {
 // --- AI Reviews ---
 
 function saveReview(candidateId, reviewData) {
-  const { match_score, strengths, gaps, red_flags, summary, work_experience, warnings } = reviewData;
+  const { match_score, strengths, gaps, red_flags, summary, work_experience, warnings, bonuses } = reviewData;
   const result = getDb().prepare(`
-    INSERT INTO ai_reviews (candidate_id, match_score, strengths, gaps, red_flags, summary, work_experience, warnings)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ai_reviews (candidate_id, match_score, strengths, gaps, red_flags, summary, work_experience, warnings, bonuses)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     candidateId,
     match_score,
@@ -306,7 +345,8 @@ function saveReview(candidateId, reviewData) {
     JSON.stringify(red_flags || []),
     summary || null,
     JSON.stringify(work_experience || []),
-    JSON.stringify(warnings || [])
+    JSON.stringify(warnings || []),
+    JSON.stringify(bonuses || [])
   );
   return getReview(result.lastInsertRowid);
 }
@@ -329,10 +369,29 @@ function parseReview(row) {
     red_flags: tryParse(row.red_flags, []),
     work_experience: tryParse(row.work_experience, []),
     warnings: tryParse(row.warnings, []),
+    dismissed: tryParse(row.dismissed, {}),
+    bonuses: tryParse(row.bonuses, []),
   };
 }
 
 // --- Feedback ---
+
+function dismissReviewItem(reviewId, type, index, isDismissed) {
+  const row = getDb().prepare('SELECT dismissed FROM ai_reviews WHERE id = ?').get(reviewId);
+  const d = tryParse(row?.dismissed, {}) || {};
+  if (type === 'no_experience') {
+    if (isDismissed) d.no_experience = true;
+    else delete d.no_experience;
+  } else {
+    if (!d[type]) d[type] = [];
+    if (isDismissed) {
+      if (!d[type].includes(index)) d[type].push(index);
+    } else {
+      d[type] = d[type].filter(i => i !== index);
+    }
+  }
+  getDb().prepare('UPDATE ai_reviews SET dismissed = ? WHERE id = ?').run(JSON.stringify(d), reviewId);
+}
 
 function searchCandidates(query) {
   return getDb().prepare(`
@@ -387,6 +446,30 @@ function deleteWarningRule(id) {
   return getDb().prepare(`DELETE FROM warning_rules WHERE id = ?`).run(id).changes > 0;
 }
 
+// --- Bonus Rules ---
+
+function listBonusRules() {
+  return getDb().prepare(`SELECT * FROM bonus_rules ORDER BY created_at ASC`).all();
+}
+
+function createBonusRule(text) {
+  const result = getDb().prepare(`INSERT INTO bonus_rules (text) VALUES (?)`).run(text);
+  return getDb().prepare(`SELECT * FROM bonus_rules WHERE id = ?`).get(result.lastInsertRowid);
+}
+
+function updateBonusRule(id, updates) {
+  const allowed = ['text', 'enabled'];
+  const fields = Object.keys(updates).filter(k => allowed.includes(k));
+  if (!fields.length) return getDb().prepare(`SELECT * FROM bonus_rules WHERE id = ?`).get(id);
+  const set = fields.map(f => `${f} = ?`).join(', ');
+  getDb().prepare(`UPDATE bonus_rules SET ${set} WHERE id = ?`).run(...fields.map(f => updates[f]), id);
+  return getDb().prepare(`SELECT * FROM bonus_rules WHERE id = ?`).get(id);
+}
+
+function deleteBonusRule(id) {
+  return getDb().prepare(`DELETE FROM bonus_rules WHERE id = ?`).run(id).changes > 0;
+}
+
 function tryParse(val, fallback) {
   try { return JSON.parse(val); } catch { return fallback; }
 }
@@ -408,9 +491,10 @@ module.exports = {
   getDb,
   listJobs, getJob, createJob, updateJob, deleteJob,
   listCandidates, getCandidate, createCandidate, updateCandidateStatus, setReviewing, deleteCandidate, deleteAllCandidates,
-  saveReview, getReview, getLatestReview,
+  saveReview, getReview, getLatestReview, dismissReviewItem,
   searchCandidates,
   addFeedback, listFeedback,
   getConfig, setConfig,
   listWarningRules, createWarningRule, updateWarningRule, deleteWarningRule,
+  listBonusRules, createBonusRule, updateBonusRule, deleteBonusRule,
 };

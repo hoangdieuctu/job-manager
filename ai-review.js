@@ -50,11 +50,15 @@ async function extractTextFromFile(filePath, originalName) {
   throw new Error(`Unsupported file type: ${ext}. Only PDF and DOCX are supported.`);
 }
 
-async function reviewCv(cvText, job, warningRules = []) {
+async function reviewCv(cvText, job, warningRules = [], bonusRules = []) {
   const truncated = cvText.length > 8000 ? cvText.slice(0, 8000) + '\n\n[...truncated for review...]' : cvText;
 
   const rulesSection = warningRules.length
     ? `\nWARNING RULES — check each rule and flag any violations in the "warnings" array:\n${warningRules.map((r, i) => `${i + 1}. ${r.text}`).join('\n')}`
+    : '';
+
+  const bonusSection = bonusRules.length
+    ? `\nBONUS RULES — check each rule and list any matches in the "bonuses" array:\n${bonusRules.map((r, i) => `${i + 1}. ${r.text}`).join('\n')}`
     : '';
 
   const prompt = `You are an expert technical recruiter. Review this CV against the job requirements and provide a structured assessment.
@@ -69,7 +73,7 @@ ${job.responsibilities || 'Not provided'}
 
 QUALIFICATIONS:
 ${job.qualifications || 'Not provided'}
-${rulesSection}
+${rulesSection}${bonusSection}
 CV TEXT:
 ${truncated}
 
@@ -80,6 +84,7 @@ Respond with ONLY a JSON object in this exact format (no markdown, no explanatio
   "gaps": [<string>, ...],
   "red_flags": [<string>, ...],
   "warnings": [<string>, ...],
+  "bonuses": [<string>, ...],
   "summary": "<2-3 sentence overall assessment>",
   "work_experience": [
     { "title": "<job title>", "company": "<company name>", "duration": "<e.g. Jan 2020 – Mar 2022>", "summary": "<1-2 sentence description of role and key achievements>" },
@@ -93,6 +98,7 @@ Guidelines:
 - gaps: 2-4 missing skills or experience areas (empty array if none)
 - red_flags: 0-3 concerns (employment gaps, mismatches, etc.) — empty array if none
 - warnings: one entry per violated warning rule, describing the violation — empty array if no rules provided or none violated
+- bonuses: one entry per matched bonus rule, describing how the candidate meets it — empty array if no bonus rules provided or none matched
 - summary: concise recruiter-style summary
 - work_experience: list all roles in reverse chronological order (most recent first), empty array if none found`;
 
@@ -143,6 +149,7 @@ function parseClaudeResponse(raw) {
     gaps: Array.isArray(parsed.gaps) ? parsed.gaps.slice(0, 8).map(String) : [],
     red_flags: Array.isArray(parsed.red_flags) ? parsed.red_flags.slice(0, 5).map(String) : [],
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 20).map(String) : [],
+    bonuses: Array.isArray(parsed.bonuses) ? parsed.bonuses.slice(0, 20).map(String) : [],
     summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 1000) : '',
     work_experience,
   };

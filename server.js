@@ -116,6 +116,28 @@ app.delete('/api/warning-rules/:id', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/bonus-rules', (req, res) => {
+  res.json(db.listBonusRules());
+});
+
+app.post('/api/bonus-rules', (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+  res.status(201).json(db.createBonusRule(text.trim()));
+});
+
+app.patch('/api/bonus-rules/:id', (req, res) => {
+  const rule = db.updateBonusRule(Number(req.params.id), req.body);
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+  res.json(rule);
+});
+
+app.delete('/api/bonus-rules/:id', (req, res) => {
+  const deleted = db.deleteBonusRule(Number(req.params.id));
+  if (!deleted) return res.status(404).json({ error: 'Rule not found' });
+  res.json({ success: true });
+});
+
 // --- Job Routes ---
 
 app.post('/api/jobs/upload-jd', upload.single('jd'), async (req, res) => {
@@ -193,14 +215,16 @@ app.delete('/api/jobs/:id', (req, res) => {
 app.post('/api/jobs/:id/review-all', async (req, res) => {
   const job = db.getJob(Number(req.params.id));
   if (!job) return res.status(404).json({ error: 'Job not found' });
-  const candidates = db.listCandidates(Number(req.params.id)).filter(c => c.cv_text && c.status === 'new');
+  const candidates = db.listCandidates(Number(req.params.id)).filter(c => c.has_cv_text && c.status === 'new');
   if (!candidates.length) return res.json({ started: 0 });
 
   // Fire and forget — run in background, don't await
   const rules = db.listWarningRules().filter(r => r.enabled);
+  const bonusRules = db.listBonusRules().filter(r => r.enabled);
   Promise.all(candidates.map(async c => {
     try {
-      const reviewData = await reviewCv(c.cv_text, job, rules);
+      const full = db.getCandidate(c.id);
+      const reviewData = await reviewCv(full.cv_text, job, rules, bonusRules);
       db.saveReview(c.id, reviewData);
       db.updateCandidateStatus(c.id, 'reviewing');
     } catch (err) {
@@ -253,7 +277,7 @@ app.post('/api/jobs/:id/export-cvs', (req, res) => {
   archive.finalize();
 });
 
-app.post('/api/jobs/:id/upload-cv', upload.array('cvs', 20), async (req, res) => {
+app.post('/api/jobs/:id/upload-cv', upload.array('cvs', 500), async (req, res) => {
   const jobId = Number(req.params.id);
   const job = db.getJob(jobId);
   if (!job) return res.status(404).json({ error: 'Job not found' });
@@ -324,7 +348,8 @@ app.post('/api/candidates/:id/ai-review', async (req, res) => {
 
   try {
     const rules = db.listWarningRules().filter(r => r.enabled);
-    const reviewData = await reviewCv(candidate.cv_text, job, rules);
+    const bonusRules = db.listBonusRules().filter(r => r.enabled);
+    const reviewData = await reviewCv(candidate.cv_text, job, rules, bonusRules);
     db.saveReview(candidate.id, reviewData);
     db.updateCandidateStatus(candidate.id, 'reviewing');
   } catch (err) {
@@ -332,6 +357,17 @@ app.post('/api/candidates/:id/ai-review', async (req, res) => {
   } finally {
     db.setReviewing(candidate.id, false);
   }
+});
+
+app.patch('/api/candidates/:id/review/dismiss', (req, res) => {
+  const { type, index, dismissed } = req.body;
+  if (!['red_flags', 'warnings', 'no_experience', 'bonuses'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
+  if (type !== 'no_experience' && typeof index !== 'number') return res.status(400).json({ error: 'index must be a number' });
+  const candidate = db.getCandidate(Number(req.params.id));
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+  if (!candidate.ai_review) return res.status(404).json({ error: 'Review not found' });
+  db.dismissReviewItem(candidate.ai_review.id, type, index, !!dismissed);
+  res.json(db.getCandidate(Number(req.params.id)));
 });
 
 app.post('/api/candidates/:id/feedback', (req, res) => {
@@ -401,24 +437,29 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
   const job = db.getJob(candidate.job_id);
   const review = candidate.ai_review;
 
+  const ARIAL_UNICODE = '/Library/Fonts/Arial Unicode.ttf';
   const doc = new PDFDocument({ margin: 50, size: 'A4', autoFirstPage: true });
-  const safeName = (candidate.name || 'candidate').replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '_');
+  doc.registerFont('U', ARIAL_UNICODE);
+  doc.registerFont('U-Bold', ARIAL_UNICODE);   // Arial Unicode has no separate bold; use same for bold fallback
+  const rawName = (candidate.name || 'candidate').trim();
+  const asciiFallback = rawName.replace(/[^a-z0-9_\-\s]/gi, '').trim().replace(/\s+/g, '_') || 'candidate';
+  const encodedName = encodeURIComponent(rawName.replace(/\s+/g, '_'));
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${safeName}_review.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}_review.pdf"; filename*=UTF-8''${encodedName}_review.pdf`);
   doc.pipe(res);
 
   const C = { accent: '#6366f1', green: '#059669', red: '#e11d48', amber: '#d97706', muted: '#64748b', light: '#94a3b8', dark: '#1e293b', bg: '#f8fafc', border: '#e2e8f0', summarybg: '#f1f5f9' };
   const L = 50, R = 545, W = 495;
 
   // ── Header ────────────────────────────────────────────────────────────────
-  doc.font('Helvetica-Bold').fontSize(22).fillColor(C.dark)
+  doc.font('U-Bold').fontSize(22).fillColor(C.dark)
     .text(candidate.name || 'Candidate', L, 50, { width: W });
   const metaParts = [
     candidate.email,
     job?.title,
     candidate.created_at ? `Applied ${new Date(candidate.created_at + ' UTC').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : '',
   ].filter(Boolean).join('   ·   ');
-  doc.font('Helvetica').fontSize(9).fillColor(C.light).text(metaParts, L, doc.y + 4, { width: W });
+  doc.font('U').fontSize(9).fillColor(C.light).text(metaParts, L, doc.y + 4, { width: W });
   doc.moveDown(0.6);
   doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor(C.border).lineWidth(0.75).stroke();
   doc.moveDown(0.8);
@@ -427,7 +468,7 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
   // Section group title
   function sectionTitle(label, color) {
     doc.moveDown(0.5);
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(color)
+    doc.font('U-Bold').fontSize(10).fillColor(color)
       .text(label.toUpperCase(), L, doc.y, { characterSpacing: 0.8 });
     doc.moveDown(0.3);
   }
@@ -436,7 +477,7 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
   function reviewItem(text, color, isLast) {
     const rowY = doc.y;
     doc.circle(L + 3, rowY + 7, 3).fill(color);
-    doc.font('Helvetica').fontSize(12).fillColor(C.dark)
+    doc.font('U').fontSize(12).fillColor(C.dark)
       .text(text, L + 14, rowY, { width: W - 14, lineGap: 2, align: 'justify' });
     if (!isLast) doc.moveDown(0.35);
   }
@@ -458,21 +499,21 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
     doc.circle(cx, cy, circleR - 1.5).fillOpacity(0.08).fill(scoreColor).fillOpacity(1);
 
     // Score number — centered in circle, lineBreak:false to suppress cursor move
-    doc.font('Helvetica-Bold').fontSize(18).fillColor(scoreColor)
+    doc.font('U-Bold').fontSize(18).fillColor(scoreColor)
       .text(`${sc}`, cx - circleR, cy - 13, { width: circleR * 2, align: 'center', lineBreak: false });
-    doc.font('Helvetica').fontSize(8).fillColor(scoreColor)
+    doc.font('U').fontSize(8).fillColor(scoreColor)
       .text('/ 100', cx - circleR, cy + 8, { width: circleR * 2, align: 'center', lineBreak: false });
 
     // Right-side text block — all at fixed y positions
     const textX = L + circleR * 2 + 16;
     const textW = W - circleR * 2 - 16;
-    doc.font('Helvetica-Bold').fontSize(13).fillColor(C.dark)
+    doc.font('U-Bold').fontSize(13).fillColor(C.dark)
       .text('Match Score', textX, areaY + 8, { width: textW, lineBreak: false });
-    doc.font('Helvetica').fontSize(10).fillColor(C.muted)
+    doc.font('U').fontSize(10).fillColor(C.muted)
       .text(scoreSub, textX, areaY + 28, { width: textW, lineBreak: false });
     if (review.created_at) {
       const reviewedStr = new Date(review.created_at + ' UTC').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      doc.font('Helvetica').fontSize(8).fillColor(C.light)
+      doc.font('U').fontSize(8).fillColor(C.light)
         .text(`Reviewed ${reviewedStr}`, textX, areaY + 46, { width: textW, lineBreak: false });
     }
 
@@ -483,7 +524,7 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
     // Summary box (mirrors .review-summary)
     if (review.summary) {
       const sumY = doc.y;
-      doc.font('Helvetica-Oblique').fontSize(10);
+      doc.font('U').fontSize(10);
       const sumH = doc.heightOfString(review.summary, { width: W - 24, lineGap: 2 }) + 20;
       doc.rect(L, sumY, W, sumH).fillColor(C.summarybg).fill();
       doc.rect(L, sumY, W, sumH).strokeColor(C.border).lineWidth(0.5).stroke();
@@ -514,6 +555,12 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
     if (review.warnings?.length) {
       sectionTitle('Rule Warnings', C.amber);
       review.warnings.forEach((w, i) => reviewItem(w, C.amber, i === review.warnings.length - 1));
+    }
+
+    // Bonus Matches
+    if (review.bonuses?.length) {
+      sectionTitle('Bonus Matches', C.green);
+      review.bonuses.forEach((b, i) => reviewItem(b, C.green, i === review.bonuses.length - 1));
     }
   }
 

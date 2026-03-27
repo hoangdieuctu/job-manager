@@ -667,6 +667,7 @@ const api = {
 // ── Router ───────────────────────────────────────────
 let _jobPrefill = null; // set before navigating to /jobs/new to pre-fill the form
 const _reviewPolls = {}; // jobId → { poll, pending, total } — survives navigation
+const _jobFilters = {};  // jobId → { score, status, sort } — survives navigation
 const routes = [
   { re: /^\/$/, fn: viewDashboard },
   { re: /^\/jobs\/new$/, fn: () => viewJobForm(null) },
@@ -894,9 +895,20 @@ async function viewJobDetail(jobId) {
 
   const candRows = candidates.length
     ? candidates.map(c => {
-        const scoreHtml = c.match_score != null
+        const scoreHtml = c.needs_manual_review
+          ? `<span style="font-size:11px;color:var(--amber)">Manual review</span>`
+          : c.match_score != null
           ? `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`
           : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
+        const warnHtml = c.warnings_count > 0
+          ? `<span class="warn-badge" style="font-size:11px;color:var(--amber);background:rgba(245,158,11,0.1);border-radius:4px;padding:2px 6px">⚠ ${c.warnings_count}</span>`
+          : '<span class="warn-badge"></span>';
+        const redFlagHtml = c.red_flags_count > 0
+          ? `<span class="rflag-badge" style="font-size:11px;color:var(--red);background:rgba(244,63,94,0.1);border-radius:4px;padding:2px 6px">⚑ ${c.red_flags_count}</span>`
+          : '<span class="rflag-badge"></span>';
+        const bonusHtml = c.bonuses_count > 0
+          ? `<span class="bonus-badge" style="font-size:11px;color:var(--green);background:rgba(16,185,129,0.1);border-radius:4px;padding:2px 6px">★ ${c.bonuses_count}</span>`
+          : '<span class="bonus-badge"></span>';
         return `
           <div class="cand-row" id="cand-row-${c.id}" data-score="${c.match_score != null ? c.match_score : 'none'}" data-status="${c.status}" data-name="${escHtml(c.name)}" data-created="${c.created_at || ''}" onclick="navigate('/candidates/${c.id}')">
             <div class="cand-avatar">${initials(c.name)}</div>
@@ -904,6 +916,9 @@ async function viewJobDetail(jobId) {
               <div class="cand-name">${escHtml(c.name)}</div>
               <div class="cand-email">${escHtml(c.email || 'No email')}</div>
             </div>
+            ${bonusHtml}
+            ${redFlagHtml}
+            ${warnHtml}
             <span class="badge badge-${c.status}">${c.status}</span>
             <span class="cand-score-area">${scoreHtml}</span>
           </div>`;
@@ -1021,9 +1036,15 @@ async function viewJobDetail(jobId) {
     document.getElementById('score-filter').addEventListener('change', applyFiltersAndSort);
     document.getElementById('status-filter').addEventListener('change', applyFiltersAndSort);
     document.getElementById('sort-select').addEventListener('change', applyFiltersAndSort);
+    // Restore saved filter state for this job
+    const saved = _jobFilters[jobId] || {};
+    if (saved.score) document.getElementById('score-filter').value = saved.score;
+    if (saved.status) document.getElementById('status-filter').value = saved.status;
+    if (saved.sort) document.getElementById('sort-select').value = saved.sort;
     function applyFiltersAndSort() {      const scoreVal = document.getElementById('score-filter').value;
       const statusVal = document.getElementById('status-filter').value;
       const sortVal = document.getElementById('sort-select').value;
+      _jobFilters[jobId] = { score: scoreVal, status: statusVal, sort: sortVal };
       const [scoreType, scoreNum] = scoreVal.includes(':') ? scoreVal.split(':') : ['', ''];
       const container = document.querySelector('.cand-rows-container');
       const rows = Array.from(document.querySelectorAll('.cand-row'));
@@ -1091,14 +1112,29 @@ async function viewJobDetail(jobId) {
           const row = document.querySelector(`#cand-row-${c.id}`);
           if (!row) return;
           const sc = updated.ai_review?.match_score;
+          const noExp = (updated.ai_review?.work_experience || []).length === 0 && !(updated.ai_review?.dismissed || {}).no_experience;
+          const needsManual = !updated.cv_text || (sc != null && noExp);
           const el = row.querySelector('.cand-score-area');
-          if (el) el.innerHTML = sc != null
+          if (el) el.innerHTML = needsManual
+            ? `<span style="font-size:11px;color:var(--amber)">Manual review</span>`
+            : sc != null
             ? `<span class="cand-score-inline" style="color:${scoreColor(sc)};background:${scoreColor(sc).replace(')', ',0.1)').replace('var(', 'rgba(')}">${sc}%</span>`
             : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
           row.dataset.score = sc != null ? sc : 'none';
           row.dataset.status = updated.status;
           const badge = row.querySelector('.badge');
           if (badge) { badge.className = `badge badge-${updated.status}`; badge.textContent = updated.status; }
+          const r = updated.ai_review || {};
+          const dismissed = r.dismissed || {};
+          const wCount = (r.warnings || []).filter((_, i) => !(dismissed.warnings || []).includes(i)).length;
+          const rCount = (r.red_flags || []).filter((_, i) => !(dismissed.red_flags || []).includes(i)).length;
+          const bCount = (r.bonuses || []).filter((_, i) => !(dismissed.bonuses || []).includes(i)).length;
+          const wBadge = row.querySelector('.warn-badge');
+          const rBadge = row.querySelector('.rflag-badge');
+          const bBadge = row.querySelector('.bonus-badge');
+          if (wBadge) wBadge.outerHTML = wCount > 0 ? `<span class="warn-badge" style="font-size:11px;color:var(--amber);background:rgba(245,158,11,0.1);border-radius:4px;padding:2px 6px">⚠ ${wCount}</span>` : '<span class="warn-badge"></span>';
+          if (rBadge) rBadge.outerHTML = rCount > 0 ? `<span class="rflag-badge" style="font-size:11px;color:var(--red);background:rgba(244,63,94,0.1);border-radius:4px;padding:2px 6px">⚑ ${rCount}</span>` : '<span class="rflag-badge"></span>';
+          if (bBadge) bBadge.outerHTML = bCount > 0 ? `<span class="bonus-badge" style="font-size:11px;color:var(--green);background:rgba(16,185,129,0.1);border-radius:4px;padding:2px 6px">★ ${bCount}</span>` : '<span class="bonus-badge"></span>';
         }
       } catch { clearInterval(poll); }
     }, 2000);
@@ -1131,9 +1167,25 @@ async function viewCandidateDetail(candidateId) {
         </div>`).join('')}</div>`
     : `<div style="color:var(--t3);font-size:13px;padding:8px 0">No work experience data — run AI Review to extract it.</div>`;
 
+  const canAiReview = !!candidate.cv_text;
   const isBeingReviewed = candidate.ai_reviewing || Object.values(_reviewPolls).some(p => p.pending.has(candidateId));
+  const hasReview = !!review;
+  const noExperience = hasReview && (review.work_experience || []).length === 0 && !(review.dismissed || {}).no_experience;
+  const needsManualReview = !canAiReview || noExperience;
 
-  const reviewContent = review && !isBeingReviewed ? renderReview(review)
+  const manualReviewNotice = needsManualReview ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--amber)">
+      <span>👁 ${canAiReview ? 'No work experience found — manual review recommended.' : 'CV could not be read automatically — please review manually.'}</span>
+      ${canAiReview && hasReview ? `<button onclick="dismissItem(${candidateId},'no_experience',-1,true)" style="background:none;border:none;cursor:pointer;color:var(--t3);font-size:12px;padding:0;flex-shrink:0" title="Dismiss">✕ Dismiss</button>` : ''}
+    </div>` : '';
+
+  const reviewContent = !canAiReview
+    ? `${manualReviewNotice}<div class="empty-state" style="padding:32px">
+        <div class="empty-icon">👁</div>
+        <div class="empty-title">Manual review required</div>
+        <div class="empty-sub">CV could not be read automatically (image-based or unreadable). Please download and review it manually.</div>
+       </div>`
+    : review && !isBeingReviewed ? manualReviewNotice + renderReview(review, candidateId)
     : isBeingReviewed ? `<div style="padding:12px 0">
       <div class="skeleton" style="height:80px;border-radius:12px;margin-bottom:16px"></div>
       <div class="skeleton" style="height:13px;width:55%;margin-bottom:10px"></div>
@@ -1192,9 +1244,9 @@ async function viewCandidateDetail(candidateId) {
             <div class="section-title" style="margin:0">AI Review</div>
               <div style="display:flex;gap:8px;align-items:center" id="review-actions">
               ${review ? `<a href="/api/candidates/${candidate.id}/export-review" class="btn btn-secondary btn-sm" target="_blank">↓ Export</a>` : ''}
-              <button class="btn btn-primary btn-sm" id="run-review-btn" ${isBeingReviewed ? 'disabled' : ''}>
+              ${canAiReview ? `<button class="btn btn-primary btn-sm" id="run-review-btn" ${isBeingReviewed ? 'disabled' : ''}>
                 ${isBeingReviewed ? '<div class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></div> Analysing…' : review ? '↺ Re-run' : '▶ Run Review'}
-              </button>
+              </button>` : ''}
               </div>
           </div>
           <div id="review-panel">${reviewContent}</div>
@@ -1255,7 +1307,7 @@ async function viewCandidateDetail(candidateId) {
         if (!c.ai_reviewing) {
           clearInterval(poll);
           if (c.ai_review) {
-            panel.innerHTML = renderReview(c.ai_review);
+            panel.innerHTML = renderReview(c.ai_review, candidateId);
             const newExp = c.ai_review.work_experience || [];
             const expPanel = document.getElementById('exp-panel');
             if (expPanel) expPanel.innerHTML = newExp.length
@@ -1294,7 +1346,8 @@ async function viewCandidateDetail(candidateId) {
 
   if (isBeingReviewed) startReviewPolling();
 
-  document.getElementById('run-review-btn').addEventListener('click', async () => {
+  const runReviewBtn = document.getElementById('run-review-btn');
+  if (runReviewBtn) runReviewBtn.addEventListener('click', async () => {
     if (document.getElementById('run-review-btn').disabled) return;
     const btn = document.getElementById('run-review-btn');
     const panel = document.getElementById('review-panel');
@@ -1360,13 +1413,25 @@ async function viewCandidateDetail(candidateId) {
 }
 
 // ── Render Review ────────────────────────────────────
-function renderReview(review) {
+function renderReview(review, candidateId) {
   const sc = review.match_score ?? '?';
   const cls = typeof sc === 'number' ? scoreClass(sc) : 'score-mid';
   const strengths = review.strengths || [];
   const gaps = review.gaps || [];
   const redFlags = review.red_flags || [];
   const warnings = review.warnings || [];
+  const bonuses = review.bonuses || [];
+  const dismissed = review.dismissed || {};
+  const dismissedR = dismissed.red_flags || [];
+  const dismissedW = dismissed.warnings || [];
+  const dismissedB = dismissed.bonuses || [];
+  const activeRedFlags = redFlags.filter((_, i) => !dismissedR.includes(i)).length;
+  const activeWarnings = warnings.filter((_, i) => !dismissedW.includes(i)).length;
+  const activeBonuses = bonuses.filter((_, i) => !dismissedB.includes(i)).length;
+
+  const dismissBtn = (type, index, isDismissed) => candidateId
+    ? `<button onclick="dismissItem(${candidateId},'${type}',${index},${!isDismissed})" title="${isDismissed ? 'Restore' : 'Dismiss'}" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--t3);font-size:12px;padding:0 2px;line-height:1;flex-shrink:0">${isDismissed ? '↩' : '✕'}</button>`
+    : '';
 
   return `
     <div class="review-score-area">
@@ -1388,6 +1453,12 @@ function renderReview(review) {
         ${strengths.map(s => `<div class="review-item"><div class="review-item-dot" style="background:var(--green)"></div><span>${escHtml(s)}</span></div>`).join('')}
       </div>` : ''}
 
+    ${bonuses.length ? `
+      <div class="review-section">
+        <div class="review-section-title"><span style="color:var(--green)">★</span> Bonus Matches${activeBonuses < bonuses.length ? ` <span style="font-size:11px;font-weight:400;color:var(--t3)">(${activeBonuses} active)</span>` : ''}</div>
+        ${bonuses.map((b, i) => { const d = dismissedB.includes(i); return `<div class="review-item" style="${d ? 'opacity:0.4' : ''}"><div class="review-item-dot" style="background:var(--green)"></div><span style="${d ? 'text-decoration:line-through' : ''}">${escHtml(b)}</span>${dismissBtn('bonuses', i, d)}</div>`; }).join('')}
+      </div>` : ''}
+
     ${gaps.length ? `
       <div class="review-section">
         <div class="review-section-title"><span style="color:var(--amber)">△</span> Gaps</div>
@@ -1396,19 +1467,61 @@ function renderReview(review) {
 
     ${redFlags.length ? `
       <div class="review-section">
-        <div class="review-section-title"><span style="color:var(--red)">⚑</span> Red Flags</div>
-        ${redFlags.map(r => `<div class="review-item"><div class="review-item-dot" style="background:var(--red)"></div><span>${escHtml(r)}</span></div>`).join('')}
+        <div class="review-section-title"><span style="color:var(--red)">⚑</span> Red Flags${activeRedFlags < redFlags.length ? ` <span style="font-size:11px;font-weight:400;color:var(--t3)">(${activeRedFlags} active)</span>` : ''}</div>
+        ${redFlags.map((r, i) => { const d = dismissedR.includes(i); return `<div class="review-item" style="${d ? 'opacity:0.4' : ''}"><div class="review-item-dot" style="background:var(--red)"></div><span style="${d ? 'text-decoration:line-through' : ''}">${escHtml(r)}</span>${dismissBtn('red_flags', i, d)}</div>`; }).join('')}
       </div>` : ''}
 
     ${warnings.length ? `
       <div class="review-section">
-        <div class="review-section-title"><span style="color:var(--amber)">⚠</span> Rule Warnings</div>
-        ${warnings.map(w => `<div class="review-item"><div class="review-item-dot" style="background:var(--amber)"></div><span>${escHtml(w)}</span></div>`).join('')}
+        <div class="review-section-title"><span style="color:var(--amber)">⚠</span> Rule Warnings${activeWarnings < warnings.length ? ` <span style="font-size:11px;font-weight:400;color:var(--t3)">(${activeWarnings} active)</span>` : ''}</div>
+        ${warnings.map((w, i) => { const d = dismissedW.includes(i); return `<div class="review-item" style="${d ? 'opacity:0.4' : ''}"><div class="review-item-dot" style="background:var(--amber)"></div><span style="${d ? 'text-decoration:line-through' : ''}">${escHtml(w)}</span>${dismissBtn('warnings', i, d)}</div>`; }).join('')}
       </div>` : ''}
 
     <div style="font-size:11px;color:var(--t3);margin-top:10px;font-family:'JetBrains Mono',monospace">
       Reviewed ${fmtDateTime(review.created_at)}
     </div>`;
+}
+
+async function dismissItem(candidateId, type, index, isDismissed) {
+  try {
+    const updated = await api.patch(`/candidates/${candidateId}/review/dismiss`, { type, index, dismissed: isDismissed });
+    const panel = document.getElementById('review-panel');
+    if (panel) {
+      const r = updated.ai_review;
+      const noExp = r && (r.work_experience || []).length === 0 && !(r.dismissed || {}).no_experience;
+      const notice = noExp ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--amber)">
+          <span>👁 No work experience found — manual review recommended.</span>
+          <button onclick="dismissItem(${candidateId},'no_experience',-1,true)" style="background:none;border:none;cursor:pointer;color:var(--t3);font-size:12px;padding:0;flex-shrink:0" title="Dismiss">✕ Dismiss</button>
+        </div>` : '';
+      panel.innerHTML = (r ? notice + renderReview(r, candidateId) : panel.innerHTML);
+    }
+    // Update badges in candidate list row if present
+    const row = document.querySelector(`#cand-row-${candidateId}`);
+    if (row) {
+      const r = updated.ai_review || {};
+      const dismissed = r.dismissed || {};
+      const wCount = (r.warnings || []).filter((_, i) => !(dismissed.warnings || []).includes(i)).length;
+      const rCount = (r.red_flags || []).filter((_, i) => !(dismissed.red_flags || []).includes(i)).length;
+      const bCount = (r.bonuses || []).filter((_, i) => !(dismissed.bonuses || []).includes(i)).length;
+      const noExp = (r.work_experience || []).length === 0 && !dismissed.no_experience;
+      const needsManual = !updated.has_cv_text || noExp;
+      const wBadge = row.querySelector('.warn-badge');
+      const rBadge = row.querySelector('.rflag-badge');
+      const bBadge = row.querySelector('.bonus-badge');
+      const scoreArea = row.querySelector('.cand-score-area');
+      if (wBadge) wBadge.outerHTML = wCount > 0 ? `<span class="warn-badge" style="font-size:11px;color:var(--amber);background:rgba(245,158,11,0.1);border-radius:4px;padding:2px 6px">⚠ ${wCount}</span>` : '<span class="warn-badge"></span>';
+      if (rBadge) rBadge.outerHTML = rCount > 0 ? `<span class="rflag-badge" style="font-size:11px;color:var(--red);background:rgba(244,63,94,0.1);border-radius:4px;padding:2px 6px">⚑ ${rCount}</span>` : '<span class="rflag-badge"></span>';
+      if (bBadge) bBadge.outerHTML = bCount > 0 ? `<span class="bonus-badge" style="font-size:11px;color:var(--green);background:rgba(16,185,129,0.1);border-radius:4px;padding:2px 6px">★ ${bCount}</span>` : '<span class="bonus-badge"></span>';
+      if (scoreArea && type === 'no_experience') {
+        const sc = r.match_score;
+        scoreArea.innerHTML = needsManual
+          ? `<span style="font-size:11px;color:var(--amber)">Manual review</span>`
+          : sc != null ? `<span class="cand-score-inline" style="color:${scoreColor(sc)};background:${scoreColor(sc).replace(')', ',0.1)').replace('var(', 'rgba(')}">${sc}%</span>`
+          : `<span style="font-size:11px;color:var(--t4)">No review</span>`;
+      }
+    }
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── Upload Modal (multi-file) ─────────────────────────
@@ -1417,7 +1530,7 @@ function showUploadModal(jobId) {
     `<div class="drop-zone" id="drop-zone" onclick="document.getElementById('cv-files').click()">
        <div class="drop-zone-icon">📎</div>
        <div class="drop-zone-text">Click to browse or drag & drop</div>
-       <div class="drop-zone-hint">PDF or DOCX · Up to 20 files · Max 10 MB each</div>
+       <div class="drop-zone-hint">PDF or DOCX · Up to 500 files · Max 10 MB each</div>
        <input type="file" id="cv-files" accept=".pdf,.docx" multiple>
      </div>
      <div id="file-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>`,
@@ -1458,7 +1571,7 @@ function showUploadModal(jobId) {
       const ext = f.name.split('.').pop().toLowerCase();
       if (!['pdf','docx'].includes(ext)) { toast(`Skipped ${f.name} — only PDF/DOCX allowed`, 'error'); continue; }
       if (f.size > 10 * 1024 * 1024) { toast(`Skipped ${f.name} — exceeds 10 MB`, 'error'); continue; }
-      if (selectedFiles.length >= 20) { toast('Max 20 files at once', 'error'); break; }
+      if (selectedFiles.length >= 500) { toast('Max 500 files at once', 'error'); break; }
       selectedFiles.push(f);
     }
     renderFileList();
@@ -1528,16 +1641,16 @@ function showUploadModal(jobId) {
 // ── Settings ─────────────────────────────────────────
 async function viewSettings() {
   setMain('<div class="loading-state"><div class="spinner"></div><span>Loading settings…</span></div>');
-  let cfg, rules;
+  let cfg, rules, bonusRules;
   try {
-    [cfg, rules] = await Promise.all([api.get('/config'), api.get('/warning-rules')]);
+    [cfg, rules, bonusRules] = await Promise.all([api.get('/config'), api.get('/warning-rules'), api.get('/bonus-rules')]);
   } catch (e) { setMain(`<div class="empty-state"><div class="empty-title">Failed to load settings</div></div>`); return; }
 
   setMain(`
     <div class="page-header">
       <div class="page-title">Settings</div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;align-items:start">
       <div>
       <div class="card">
         <div class="section-title">Claude / AI Configuration</div>
@@ -1590,6 +1703,26 @@ async function viewSettings() {
         <div style="display:flex;gap:8px;margin-top:12px">
           <input class="form-input" type="text" id="new-rule-input" placeholder="e.g. Flag candidates who changed jobs more than 3 times in 2 years" style="flex:1">
           <button class="btn btn-primary btn-sm" id="add-rule-btn">Add Rule</button>
+        </div>
+      </div>
+      </div>
+      <div>
+      <div class="card">
+        <div class="section-title">Bonus Rules</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:12px">Positive criteria applied during AI review. Claude will flag any matches as bonuses.</div>
+        <div id="bonus-rules-list">
+          ${bonusRules.length ? bonusRules.map(r => `
+            <div class="rule-item" id="bonus-rule-${r.id}">
+              <label class="rule-toggle">
+                <input type="checkbox" data-id="${r.id}" ${r.enabled ? 'checked' : ''}>
+                <span>${escHtml(r.text)}</span>
+              </label>
+              <button class="bonus-rule-delete-btn" data-id="${r.id}" title="Delete">✕</button>
+            </div>`).join('') : `<div style="color:var(--t3);font-size:13px;margin-bottom:12px">No rules yet.</div>`}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input class="form-input" type="text" id="new-bonus-rule-input" placeholder="e.g. Has relevant open source contributions" style="flex:1">
+          <button class="btn btn-primary btn-sm" id="add-bonus-rule-btn">Add Rule</button>
         </div>
       </div>
       </div>
@@ -1670,6 +1803,49 @@ async function viewSettings() {
       }
     } catch (err) { toast(err.message, 'error'); }
   });
+
+  // Bonus rules — add
+  document.getElementById('add-bonus-rule-btn').addEventListener('click', async () => {
+    const input = document.getElementById('new-bonus-rule-input');
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+      const rule = await api.post('/bonus-rules', { text });
+      const list = document.getElementById('bonus-rules-list');
+      const empty = list.querySelector('div[style]');
+      if (empty) empty.remove();
+      const el = document.createElement('div');
+      el.className = 'rule-item'; el.id = `bonus-rule-${rule.id}`;
+      el.innerHTML = `<label class="rule-toggle"><input type="checkbox" data-id="${rule.id}" checked><span>${escHtml(rule.text)}</span></label><button class="bonus-rule-delete-btn" data-id="${rule.id}" title="Delete">✕</button>`;
+      list.appendChild(el);
+      input.value = '';
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  document.getElementById('new-bonus-rule-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('add-bonus-rule-btn').click();
+  });
+
+  // Bonus rules — toggle enabled
+  document.getElementById('bonus-rules-list').addEventListener('change', async e => {
+    const cb = e.target.closest('input[type=checkbox]');
+    if (!cb) return;
+    try { await api.patch(`/bonus-rules/${cb.dataset.id}`, { enabled: cb.checked ? 1 : 0 }); }
+    catch (err) { toast(err.message, 'error'); cb.checked = !cb.checked; }
+  });
+
+  // Bonus rules — delete
+  document.getElementById('bonus-rules-list').addEventListener('click', async e => {
+    const btn = e.target.closest('.bonus-rule-delete-btn');
+    if (!btn) return;
+    try {
+      await api.del(`/bonus-rules/${btn.dataset.id}`);
+      document.getElementById(`bonus-rule-${btn.dataset.id}`)?.remove();
+      if (!document.getElementById('bonus-rules-list').querySelector('.rule-item')) {
+        document.getElementById('bonus-rules-list').innerHTML = `<div style="color:var(--t3);font-size:13px;margin-bottom:12px">No rules yet.</div>`;
+      }
+    } catch (err) { toast(err.message, 'error'); }
+  });
 }
 
 // ── Nav Search ───────────────────────────────────────
@@ -1714,6 +1890,12 @@ async function viewSearchResults(query) {
         const scoreHtml = c.match_score != null
           ? `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`
           : '';
+        const warnHtml = c.warnings_count > 0
+          ? `<span style="font-size:11px;color:var(--amber);background:rgba(245,158,11,0.1);border-radius:4px;padding:2px 6px">⚠ ${c.warnings_count}</span>`
+          : '';
+        const redFlagHtml = c.red_flags_count > 0
+          ? `<span style="font-size:11px;color:var(--red);background:rgba(244,63,94,0.1);border-radius:4px;padding:2px 6px">⚑ ${c.red_flags_count}</span>`
+          : '';
         return `
           <div class="cand-row" onclick="navigate('/candidates/${c.id}')">
             <div class="cand-avatar">${initials(c.name)}</div>
@@ -1721,6 +1903,8 @@ async function viewSearchResults(query) {
               <div class="cand-name">${escHtml(c.name)}</div>
               <div class="cand-email">${escHtml(c.email || 'No email')} · <span style="color:var(--accent2)">${escHtml(c.job_title)}</span> @ ${escHtml(c.job_company)}</div>
             </div>
+            ${redFlagHtml}
+            ${warnHtml}
             <span class="badge badge-${c.status}">${c.status}</span>
             ${scoreHtml}
           </div>`;
@@ -1748,7 +1932,7 @@ async function runReviewAll(jobId, candidates) {
   const btn = document.getElementById('review-all-btn');
   if (!btn) return;
 
-  const reviewable = candidates.filter(c => c.cv_text && c.status === 'new');
+  const reviewable = candidates.filter(c => c.has_cv_text && c.status === 'new');
   if (!reviewable.length) { toast('No new candidates to review', 'error'); return; }
 
   btn.disabled = true;
@@ -1780,12 +1964,20 @@ async function runReviewAll(jobId, candidates) {
           pending.delete(c.id);
           const row = document.querySelector(`#cand-row-${c.id}`);
           if (row) {
-            row.dataset.score = c.match_score;
+            row.dataset.score = c.needs_manual_review ? 'none' : c.match_score;
             row.dataset.status = c.status;
             const scoreEl = row.querySelector('.cand-score-area');
-            if (scoreEl) scoreEl.innerHTML = `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`;
+            if (scoreEl) scoreEl.innerHTML = c.needs_manual_review
+              ? `<span style="font-size:11px;color:var(--amber)">Manual review</span>`
+              : `<span class="cand-score-inline" style="color:${scoreColor(c.match_score)};background:${scoreColor(c.match_score).replace(')', ',0.1)').replace('var(', 'rgba(')}">${c.match_score}%</span>`;
             const badgeEl = row.querySelector('.badge');
             if (badgeEl) { badgeEl.className = `badge badge-${c.status}`; badgeEl.textContent = c.status; }
+            const wBadge = row.querySelector('.warn-badge');
+            const rBadge = row.querySelector('.rflag-badge');
+            const bBadge = row.querySelector('.bonus-badge');
+            if (wBadge) wBadge.outerHTML = c.warnings_count > 0 ? `<span class="warn-badge" style="font-size:11px;color:var(--amber);background:rgba(245,158,11,0.1);border-radius:4px;padding:2px 6px">⚠ ${c.warnings_count}</span>` : '<span class="warn-badge"></span>';
+            if (rBadge) rBadge.outerHTML = c.red_flags_count > 0 ? `<span class="rflag-badge" style="font-size:11px;color:var(--red);background:rgba(244,63,94,0.1);border-radius:4px;padding:2px 6px">⚑ ${c.red_flags_count}</span>` : '<span class="rflag-badge"></span>';
+            if (bBadge) bBadge.outerHTML = c.bonuses_count > 0 ? `<span class="bonus-badge" style="font-size:11px;color:var(--green);background:rgba(16,185,129,0.1);border-radius:4px;padding:2px 6px">★ ${c.bonuses_count}</span>` : '<span class="bonus-badge"></span>';
           }
           const done = reviewable.length - pending.size;
           const b = document.getElementById('review-all-btn');

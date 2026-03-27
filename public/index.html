@@ -585,7 +585,7 @@ input, textarea, select { font-family: inherit; outline: none; }
 <nav id="app-nav">
   <div class="nav-logo" onclick="navigate('/')">
     <div class="nav-logo-icon">⚡</div>
-    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.4</span></div>
+    <div class="nav-logo-text">JobFlow <span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);color:#a5b4fc;letter-spacing:0.04em;vertical-align:middle">v1.0.5</span></div>
   </div>
   <div class="nav-spacer"></div>
   <div class="nav-search-wrap">
@@ -706,7 +706,10 @@ function openModal(title, body, footer = '') {
   document.getElementById('modal-footer').innerHTML = footer;
   document.getElementById('modal-overlay').classList.add('open');
 }
-function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.getElementById('modal-box').style.maxWidth = '';
+}
 document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
 });
@@ -1169,7 +1172,7 @@ async function viewCandidateDetail(candidateId) {
         <select class="form-select form-input" id="status-select" style="width:auto;padding:7px 12px;font-size:13px">
           ${statusOptions.map(s => `<option value="${s}" ${candidate.status===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}
         </select>
-        ${candidate.cv_filename ? `<a href="/api/candidates/${candidate.id}/cv" class="btn btn-secondary btn-sm" target="_blank">↓ Download CV</a>` : ''}
+        ${candidate.cv_filename ? `<button class="btn btn-secondary btn-sm" onclick="viewCv(${candidate.id}, '${escHtml(candidate.cv_original_name || '')}')">👁 View CV</button>` : ''}
         <button class="btn btn-danger btn-sm" id="delete-cand-btn">Delete</button>
       </div>
     </div>
@@ -1873,6 +1876,36 @@ function showJdUploadModal() {
       btn.textContent = 'Extract Fields';
     }
   });
+}
+
+// ── View CV ──────────────────────────────────────────
+function viewCv(candidateId, originalName) {
+  const isPdf = (originalName || '').toLowerCase().endsWith('.pdf');
+  const url = `/api/candidates/${candidateId}/cv-view`;
+
+  if (isPdf) {
+    openModal('CV',
+      `<div style="height:75vh;margin:-20px -24px">
+         <iframe src="${url}" style="width:100%;height:100%;border:none;border-radius:0 0 var(--r3) var(--r3)"></iframe>
+       </div>`,
+      ''
+    );
+    document.getElementById('modal-box').style.maxWidth = '860px';
+  } else {
+    // DOCX — show extracted text
+    const candidate = null; // we already have cv_text in scope via the outer function, so fetch it
+    fetch(`/api/candidates/${candidateId}`)
+      .then(r => r.json())
+      .then(c => {
+        const text = c.cv_text || 'No text available.';
+        openModal(escHtml(originalName || 'CV'),
+          `<pre style="white-space:pre-wrap;font-family:'Inter',sans-serif;font-size:13px;line-height:1.75;color:var(--t2);max-height:65vh;overflow-y:auto;margin:0">${escHtml(text)}</pre>`,
+          ''
+        );
+        document.getElementById('modal-box').style.maxWidth = '720px';
+      })
+      .catch(() => toast('Failed to load CV text', 'error'));
+  }
 }
 
 // ── Delete Job ───────────────────────────────────────

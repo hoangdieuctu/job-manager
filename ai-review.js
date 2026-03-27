@@ -30,7 +30,7 @@ async function extractTextFromFile(filePath, originalName) {
     const buffer = fs.readFileSync(filePath);
     try {
       const data = await pdfParse(buffer);
-      const text = (data.text || '').trim();
+      const text = (data.text || '').replace(/\0/g, '').trim();
       if (!text) throw new Error('PDF appears to be encrypted or image-only — no extractable text found.');
       return text;
     } catch (err) {
@@ -42,7 +42,7 @@ async function extractTextFromFile(filePath, originalName) {
   if (ext === '.docx') {
     const mammoth = require('mammoth');
     const result = await mammoth.extractRawText({ path: filePath });
-    const text = (result.value || '').trim();
+    const text = (result.value || '').replace(/\0/g, '').trim();
     if (!text) throw new Error('DOCX appears to be empty or unreadable.');
     return text;
   }

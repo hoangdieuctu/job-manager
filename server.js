@@ -357,6 +357,19 @@ app.get('/api/candidates/:id/cv', (req, res) => {
   res.download(filePath, candidate.cv_original_name || safeName);
 });
 
+app.get('/api/candidates/:id/cv-view', (req, res) => {
+  const candidate = db.getCandidate(Number(req.params.id));
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+  if (!candidate.cv_filename) return res.status(404).json({ error: 'No CV file on record' });
+
+  const safeName = path.basename(candidate.cv_filename);
+  const filePath = path.join(UPLOADS_DIR, safeName);
+  if (!filePath.startsWith(UPLOADS_DIR)) return res.status(403).json({ error: 'Forbidden' });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on disk' });
+
+  res.sendFile(filePath);
+});
+
 app.delete('/api/candidates/:id', (req, res) => {
   const candidate = db.getCandidate(Number(req.params.id));
   if (!candidate) return res.status(404).json({ error: 'Candidate not found' });

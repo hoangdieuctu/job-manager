@@ -437,7 +437,7 @@ app.get('/api/candidates/:id/export-review', (req, res) => {
   const job = db.getJob(candidate.job_id);
   const review = candidate.ai_review;
 
-  const ARIAL_UNICODE = '/Library/Fonts/Arial Unicode.ttf';
+  const ARIAL_UNICODE = path.join(__dirname, 'fonts', 'ArialUnicode.ttf');
   const doc = new PDFDocument({ margin: 50, size: 'A4', autoFirstPage: true });
   doc.registerFont('U', ARIAL_UNICODE);
   doc.registerFont('U-Bold', ARIAL_UNICODE);   // Arial Unicode has no separate bold; use same for bold fallback

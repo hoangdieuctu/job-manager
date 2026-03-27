@@ -1,6 +1,6 @@
 services:
   app:
-    image: hoangdieuctu/jobflow-pub:1.0.1
+    image: hoangdieuctu/jobflow-pub:1.0.4
     ports:
       - "3000:3000"
     environment:
